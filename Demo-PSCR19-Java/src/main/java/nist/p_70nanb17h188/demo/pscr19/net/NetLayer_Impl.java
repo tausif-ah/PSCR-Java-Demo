@@ -2,6 +2,7 @@ package nist.p_70nanb17h188.demo.pscr19.net;
 
 import java.util.HashMap;
 import java.util.HashSet;
+import nist.p_70nanb17h188.demo.pscr19.Device;
 import nist.p_70nanb17h188.demo.pscr19.link.LinkLayer;
 import nist.p_70nanb17h188.demo.pscr19.link.NeighborID;
 
@@ -15,6 +16,7 @@ public class NetLayer_Impl {
     NetLayer_Impl() {
         LinkLayer.addConnectionHandler(this::linkConnectionChanged);
         LinkLayer.addDataReceivedHandler(this::linkDataReceived);
+        System.out.printf("NetLayer_Impl on %s initialized!%n", Device.getName());
     }
 
     public boolean subscribe(Name n, DataReceivedHandler h) {
