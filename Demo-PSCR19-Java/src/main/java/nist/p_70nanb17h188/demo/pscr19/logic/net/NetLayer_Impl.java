@@ -1,10 +1,9 @@
-package nist.p_70nanb17h188.demo.pscr19.net;
+package nist.p_70nanb17h188.demo.pscr19.logic.net;
 
 import java.util.HashMap;
 import java.util.HashSet;
-import nist.p_70nanb17h188.demo.pscr19.Device;
-import nist.p_70nanb17h188.demo.pscr19.link.LinkLayer;
-import nist.p_70nanb17h188.demo.pscr19.link.NeighborID;
+import nist.p_70nanb17h188.demo.pscr19.logic.Device;
+import nist.p_70nanb17h188.demo.pscr19.logic.link.NeighborID;
 
 /**
  * An implementation of the Naming layer.
@@ -14,8 +13,8 @@ public class NetLayer_Impl {
     private final HashMap<Name, HashSet<DataReceivedHandler>> dataHandlers = new HashMap<>();
 
     NetLayer_Impl() {
-        LinkLayer.addConnectionHandler(this::linkConnectionChanged);
-        LinkLayer.addDataReceivedHandler(this::linkDataReceived);
+//        LinkLayer.addConnectionHandler(this::linkConnectionChanged);
+//        LinkLayer.addDataReceivedHandler(this::linkDataReceived);
         System.out.printf("NetLayer_Impl on %s initialized!%n", Device.getName());
     }
 
@@ -32,7 +31,7 @@ public class NetLayer_Impl {
         }
         return handlers.add(h);
     }
-    
+
     public boolean unSubscribe(Name n, DataReceivedHandler h) {
         HashSet<DataReceivedHandler> handlers = dataHandlers.get(n);
         if (handlers == null || !handlers.remove(h)) {

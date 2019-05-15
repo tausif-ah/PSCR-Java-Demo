@@ -1,4 +1,4 @@
-package nist.p_70nanb17h188.demo.pscr19.net;
+package nist.p_70nanb17h188.demo.pscr19.logic.net;
 
 public interface DataReceivedHandler {
 
