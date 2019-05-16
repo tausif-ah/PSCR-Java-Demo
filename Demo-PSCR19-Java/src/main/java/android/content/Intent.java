@@ -40,8 +40,14 @@ public class Intent {
         return defaultValue;
     }
 
+    @SuppressWarnings("unchecked")
     public <T> T getParcelableExtra(String name) {
-        return (T) extras.get(name);
+        try {
+            T ret = (T)extras.get(name);
+            return ret;
+        } catch(ClassCastException e) {
+            return null;
+        }
     }
 
     public Serializable getSerializableExtra(String name) {

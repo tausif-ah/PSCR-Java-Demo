@@ -25,12 +25,12 @@ public class Constants {
     static {
         InetSocketAddress tmp = null;
         try {
-//            tmp = new InetSocketAddress(
-//                    InetAddress.getByAddress(new byte[]{(byte) 192, (byte) 168, 49, 1}),
-//                    WIFI_DIRECT_SERVER_LISTEN_PORT);
             tmp = new InetSocketAddress(
-                    InetAddress.getByAddress(new byte[]{(byte) 127, (byte) 0, 0, 1}),
+                    InetAddress.getByAddress(new byte[]{(byte) 192, (byte) 168, 49, 1}),
                     WIFI_DIRECT_SERVER_LISTEN_PORT);
+//            tmp = new InetSocketAddress(
+//                    InetAddress.getByAddress(new byte[]{(byte) 127, (byte) 0, 0, 1}),
+//                    WIFI_DIRECT_SERVER_LISTEN_PORT);
         } catch (UnknownHostException e) {
             e.printStackTrace(System.err);
         }

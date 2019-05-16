@@ -15,6 +15,7 @@ import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
 import java.nio.channels.spi.SelectorProvider;
 import java.nio.charset.Charset;
+import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.Queue;
 
@@ -23,6 +24,16 @@ import nist.p_70nanb17h188.demo.pscr19.logic.Helper;
 import nist.p_70nanb17h188.demo.pscr19.logic.log.Log;
 
 class TCPConnectionManager {
+    private static class PendingSocketChannel {
+        final SocketChannel channel;
+        final InetSocketAddress remoteAddress;
+
+        public PendingSocketChannel(SocketChannel channel, InetSocketAddress remoteAddress) {
+            this.channel = channel;
+            this.remoteAddress = remoteAddress;
+        }
+    }
+
 
     private static final String TAG = "TCPConnectionManager";
     private static final int DEFAULT_READ_BUFFER_SIZE = 8192;
@@ -30,8 +41,11 @@ class TCPConnectionManager {
     // if the value is too large, keep-alive will not be checked properly.
     private static final long SELECTOR_SELECT_TIMEOUT_MS = 500;
     private static TCPConnectionManager DEFAULT_INSTANCE = null;
+
+    @NonNull
     private final Selector selector;
     private final ByteBuffer readBuffer = ByteBuffer.allocate(DEFAULT_READ_BUFFER_SIZE);
+    private final ArrayList<PendingSocketChannel> toConnects = new ArrayList<>();
 
     private TCPConnectionManager() throws IOException {
         selector = SelectorProvider.provider().openSelector();
@@ -85,11 +99,12 @@ class TCPConnectionManager {
     /**
      * Listen to a local address.
      *
-     * @param addr The local address.
+     * @param addr                            The local address.
      * @param serverSocketChannelEventHandler The event handler that deals with
-     * ServerSocketChannel.
+     *                                        ServerSocketChannel.
      * @return The created ServerSocketChannel. Null if failed in creation.
      */
+    @Nullable
     ServerSocketChannel addServerSocketChannel(@NonNull InetSocketAddress addr, @Nullable ServerSocketChannelEventHandler serverSocketChannelEventHandler) {
         try {
             ServerSocketChannel serverSocketChannel = ServerSocketChannel.open();
@@ -134,25 +149,24 @@ class TCPConnectionManager {
     /**
      * Create a connection to a remote address.
      *
-     * @param remoteAddress The remote address to connect to.
+     * @param remoteAddress             The remote address to connect to.
      * @param socketChannelEventHandler The handler that deals with events
-     * related to the socket.
+     *                                  related to the socket.
      * @return The created SocketChannel. Null on failure.
      */
-    SocketChannel addSocketChannel(@NonNull InetSocketAddress remoteAddress, SocketChannelEventHandler socketChannelEventHandler) {
-        SelectionKey key = null;
+    @Nullable
+    SocketChannel addSocketChannel(@NonNull InetSocketAddress remoteAddress, @Nullable SocketChannelEventHandler socketChannelEventHandler) {
         try {
             SocketChannel socketChannel = SocketChannel.open();
             socketChannel.configureBlocking(false);
             setSocketChannelOptions(socketChannel);
             selector.wakeup();
-            key = socketChannel.register(selector, SelectionKey.OP_CONNECT, new SocketChannelBufferHandler(socketChannel, socketChannelEventHandler));
-            socketChannel.connect(remoteAddress);
+            socketChannel.register(selector, SelectionKey.OP_CONNECT, new SocketChannelBufferHandler(socketChannel, socketChannelEventHandler));
+            synchronized (toConnects) {
+                toConnects.add(new PendingSocketChannel(socketChannel, remoteAddress));
+            }
             return socketChannel;
         } catch (IOException e) {
-            if (key != null) {
-                key.cancel();
-            }
             Log.e(TAG, e, "Failed in adding Socket Channel!");
             return null;
         }
@@ -187,7 +201,7 @@ class TCPConnectionManager {
         selector.wakeup();
     }
 
-    private void innerCloseSocketChannel(SelectionKey key, SocketChannelBufferHandler socketChannelBufferHandler) {
+    private void innerCloseSocketChannel(@NonNull SelectionKey key, @NonNull SocketChannelBufferHandler socketChannelBufferHandler) {
         SocketChannel socketChannel = socketChannelBufferHandler.socketChannel;
         try {
             socketChannel.close();
@@ -205,6 +219,17 @@ class TCPConnectionManager {
 
     private void mainLoop() {
         while (true) {
+            synchronized (toConnects) {
+                for (PendingSocketChannel toConnect : toConnects) {
+                    try {
+                        toConnect.channel.connect(toConnect.remoteAddress);
+                    } catch (IOException e) {
+                        Log.e(TAG, e, "Failed in connecting to address: %s", toConnect.remoteAddress);
+                    }
+                }
+                toConnects.clear();
+            }
+
             try {
                 selector.select(SELECTOR_SELECT_TIMEOUT_MS);
             } catch (IOException | RuntimeException ex) {
@@ -216,17 +241,14 @@ class TCPConnectionManager {
                     continue;
                 }
                 try {
-                    Log.d(TAG, "mainLoop, key.readyOps=%d", selectedKey.readyOps());
+//                    Log.d(TAG, "mainLoop, key.readyOps=%d", selectedKey.readyOps());
                     if (selectedKey.isAcceptable()) {
                         accept(selectedKey);
-                    }
-                    if (selectedKey.isConnectable()) {
+                    } else if (selectedKey.isConnectable()) {
                         connect(selectedKey);
-                    }
-                    if (selectedKey.isReadable()) {
+                    } else if (selectedKey.isReadable()) {
                         read(selectedKey);
-                    }
-                    if (selectedKey.isWritable()) {
+                    } else if (selectedKey.isWritable()) {
                         write(selectedKey);
                     }
                 } catch (RuntimeException ex) {
@@ -234,7 +256,7 @@ class TCPConnectionManager {
                 }
             }
             selector.selectedKeys().clear();
-            Log.d(TAG, "key size: %d", selector.keys().size());
+//            Log.d(TAG, "key size: %d", selector.keys().size());
             for (SelectionKey key : selector.keys()) {
                 if (!key.isValid()) {
                     continue;
@@ -321,13 +343,13 @@ class TCPConnectionManager {
         innerCloseSocketChannel(key, socketChannelBufferHandler);
     }
 
-    private void write(SelectionKey key) {
+    private void write(@NonNull SelectionKey key) {
         SocketChannelBufferHandler socketChannelBufferHandler = (SocketChannelBufferHandler) key.attachment();
 
         try {
             if (socketChannelBufferHandler.performWrite()) {
                 key.interestOps(SelectionKey.OP_READ);
-                Log.d(TAG, "perform write returned true");
+//                Log.d(TAG, "perform write returned true");
             } else {
                 key.interestOps(SelectionKey.OP_READ | SelectionKey.OP_WRITE);
             }
@@ -346,22 +368,22 @@ class TCPConnectionManager {
          *
          * @param serverSocketChannel The closed ServerSocketChannel.
          */
-        void onServerSocketChannelClosed(ServerSocketChannel serverSocketChannel);
+        void onServerSocketChannelClosed(@NonNull ServerSocketChannel serverSocketChannel);
 
         /**
          * Callback when a ServerSocketChannel fails to create.
          *
          * @param serverSocketChannel The ServerSocketChannel failed to create.
          */
-        void onServerSocketChannelCloseFailed(ServerSocketChannel serverSocketChannel);
+        void onServerSocketChannelCloseFailed(@NonNull ServerSocketChannel serverSocketChannel);
 
         /**
          * Callback when the ServerSocketChannel fails to accept a socket.
          *
          * @param serverSocketChannel The ServerSocketChannel failed to accept a
-         * socket.
+         *                            socket.
          */
-        void onServerSocketChannelAcceptFailed(ServerSocketChannel serverSocketChannel);
+        void onServerSocketChannelAcceptFailed(@NonNull ServerSocketChannel serverSocketChannel);
 
         /**
          * Gets the SocketChannelEventHandler that handles the SocketChannels
@@ -370,6 +392,7 @@ class TCPConnectionManager {
          * @return The SocketChannelEventHandler that handles the SocketChannels
          * accepted.
          */
+        @NonNull
         SocketChannelEventHandler getSocketChannelEventHandler();
     }
 
@@ -391,18 +414,18 @@ class TCPConnectionManager {
          * Callback when the name is received. It only happens once.
          *
          * @param socketChannel The socket channel received the name.
-         * @param name The name received.
+         * @param name          The name received.
          */
-        void onSocketChannelNameReceived(@NonNull SocketChannel socketChannel, String name);
+        void onSocketChannelNameReceived(@NonNull SocketChannel socketChannel, @NonNull String name);
 
         /**
          * Callback when a piece of data is received. It always happen after
          * name is received.
          *
          * @param socketChannel The socket channel the data is received.
-         * @param data The data received.
+         * @param data          The data received.
          */
-        void onSocketChannelDataReceived(@NonNull SocketChannel socketChannel, byte[] data);
+        void onSocketChannelDataReceived(@NonNull SocketChannel socketChannel, @NonNull byte[] data);
 
         /**
          * Callback when the socketChannel is closed.
@@ -425,26 +448,37 @@ class TCPConnectionManager {
         private static final byte TYPE_NAME = 1;
         private static final byte TYPE_KEEP_ALIVE = 2;
         private static final byte TYPE_DATA = 3;
-        private static final long KEEP_ALIVE_DURATION_MS = 5000;
-        private static final int KEEP_ALIVE_DURATION_MS_EPSLONE = 4000;
+        private static final long KEEP_ALIVE_DURATION_MS = 2000;
+        private static final long KEEP_ALIVE_TIMEOUT_MS = 10000;
         private static final long GET_NAME_TIMEOUT_MS = 5000;
         private static final Charset DEFAULT_CHARSET = Charset.forName("UTF-8");
-
-        final SocketChannel socketChannel;
+        private static final int STATE_READ_NAME_MAGIC_TYPE = 0;
+        private static final int STATE_READ_NAME_LENGTH = 1;
+        private static final int STATE_READ_NAME_CONTENT = 2;
+        private static final int STATE_READ_MAGIC_TYPE = 3;
+        private static final int STATE_READ_LENGTH = 4;
+        private static final int STATE_READ_PAYLOAD = 5;
+        @Nullable
         final SocketChannelEventHandler socketChannelEventHandler;
-        private long lastAliveTime = 0;
+        @NonNull
+        final SocketChannel socketChannel;
+        private final ByteBuffer headerBuffer = ByteBuffer.allocate(Helper.INTEGER_SIZE + 1);
+        private final ByteBuffer sizeBuffer = ByteBuffer.allocate(Helper.INTEGER_SIZE);
+        private final Queue<ByteBuffer> toSend = new LinkedList<>();
         private long connectedTime;
-        private Queue<ByteBuffer> toSend = new LinkedList<>();
+        private long lastReadTime = 0, lastWriteTime = 0;
         private String name;
+        private int state = STATE_READ_NAME_MAGIC_TYPE;
+        private ByteBuffer contentBuffer;
 
-        SocketChannelBufferHandler(SocketChannel socketChannel, SocketChannelEventHandler socketChannelEventHandler) {
+        SocketChannelBufferHandler(@NonNull SocketChannel socketChannel, @Nullable SocketChannelEventHandler socketChannelEventHandler) {
             this.socketChannel = socketChannel;
             this.socketChannelEventHandler = socketChannelEventHandler;
         }
 
         void setConnected() {
-            Log.d(TAG, "Connected!");
-            connectedTime = System.currentTimeMillis();
+//            Log.d(TAG, "Connected!");
+            lastWriteTime = lastReadTime = connectedTime = System.currentTimeMillis();
             writeName();
         }
 
@@ -453,11 +487,11 @@ class TCPConnectionManager {
             writeVariableLengthData(TYPE_NAME, data);
         }
 
-        void writeData(byte[] data) {
+        void writeData(@NonNull byte[] data) {
             writeVariableLengthData(TYPE_DATA, data);
         }
 
-        private void writeVariableLengthData(byte type, byte[] data) {
+        private void writeVariableLengthData(byte type, @NonNull byte[] data) {
             ByteBuffer buffer = ByteBuffer.allocate(Helper.INTEGER_SIZE * 2 + 1);
             buffer.putInt(MAGIC);
             buffer.put(type);
@@ -483,13 +517,18 @@ class TCPConnectionManager {
             // check if name is not received in a period of time, close the socket! and return false.
             long now = System.currentTimeMillis();
             if (name == null && now - connectedTime > GET_NAME_TIMEOUT_MS) {
-                Log.v(TAG, "Cannot get the name of the other side. close the socket: %s", socketChannel);
+                Log.i(TAG, "Cannot get the name of the other side. close the socket: %s", socketChannel);
                 return -1;
             }
 
-            if (now - lastAliveTime < KEEP_ALIVE_DURATION_MS + (long)Helper.DEFAULT_RANDOM.nextInt(KEEP_ALIVE_DURATION_MS_EPSLONE)) {
-                return 0;
+            // Didn't receive anything from the other side for too long, discard the connection, maybe the connection is down.
+            if (now - lastReadTime > KEEP_ALIVE_TIMEOUT_MS) {
+                Log.i(TAG, "Didn't receive data from socket %s for %dms, close!", socketChannel, KEEP_ALIVE_TIMEOUT_MS);
+                return -1;
             }
+            // If I have already written something in a period of time, don't have to send keep-alive.
+            if (now - lastWriteTime < KEEP_ALIVE_DURATION_MS)
+                return 0;
             // If we still have data to write, we don't have to send yet another keep-alive message
             synchronized (this) {
                 if (!toSend.isEmpty()) {
@@ -500,7 +539,6 @@ class TCPConnectionManager {
             buffer.putInt(MAGIC);
             buffer.put(TYPE_KEEP_ALIVE);
             buffer.rewind();
-            lastAliveTime = now;
             synchronized (this) {
                 toSend.offer(buffer);
             }
@@ -514,12 +552,12 @@ class TCPConnectionManager {
          * @throws IOException If failed in writing in the socket.
          */
         boolean performWrite() throws IOException {
-            Log.d(TAG, "performWrite!");
+//            Log.d(TAG, "performWrite!");
             synchronized (this) {
                 if (toSend.isEmpty()) {
                     return true;
                 }
-                lastAliveTime = System.currentTimeMillis();
+                lastWriteTime = System.currentTimeMillis();
                 while (!toSend.isEmpty()) {
                     ByteBuffer buffer = toSend.peek();
                     socketChannel.write(buffer);
@@ -533,33 +571,21 @@ class TCPConnectionManager {
             return true;
         }
 
-        private static final int STATE_READ_NAME_MAGIC_TYPE = 0;
-        private static final int STATE_READ_NAME_LENGTH = 1;
-        private static final int STATE_READ_NAME_CONTENT = 2;
-        private static final int STATE_READ_MAGIC_TYPE = 3;
-        private static final int STATE_READ_LENGTH = 4;
-        private static final int STATE_READ_PAYLOAD = 5;
-
-        private int state = STATE_READ_NAME_MAGIC_TYPE;
-        private final ByteBuffer headerBuffer = ByteBuffer.allocate(Helper.INTEGER_SIZE + 1);
-        private final ByteBuffer sizeBuffer = ByteBuffer.allocate(Helper.INTEGER_SIZE);
-        private ByteBuffer contentBuffer;
-
         /**
          * Buffers some data into the read buffer.
          *
-         * @param buffer The buffer to be added.
+         * @param buffer  The buffer to be added.
          * @param numRead The number of bytes in the buffer available.
          * @return True if read is OK. On false, the manager should close the
          * socket.
          */
-        boolean bufferBytes(byte[] buffer, int numRead) {
+        boolean bufferBytes(@NonNull byte[] buffer, int numRead) {
             if (numRead == 0) {
                 return true;
             }
-            lastAliveTime = System.currentTimeMillis();
+            lastReadTime = System.currentTimeMillis();
             int start = 0, remaining = numRead;
-            for (;;) {
+            for (; ; ) {
                 if (remaining == 0) {
                     return true;
                 }
@@ -622,7 +648,8 @@ class TCPConnectionManager {
                         contentBuffer.rewind();
                         name = new String(contentBuffer.array(), DEFAULT_CHARSET);
                         Log.v(TAG, "name=%s", name);
-                        socketChannelEventHandler.onSocketChannelNameReceived(socketChannel, name);
+                        if (socketChannelEventHandler != null)
+                            socketChannelEventHandler.onSocketChannelNameReceived(socketChannel, name);
                         state = STATE_READ_MAGIC_TYPE;
                         continue;
                     }
@@ -656,7 +683,7 @@ class TCPConnectionManager {
                                 Log.v(TAG, "type is KEEP_ALIVE!");
                                 state = STATE_READ_MAGIC_TYPE;
                                 continue;
-                            // case TYPE_NAME:
+                                // case TYPE_NAME:
                             default:
                                 // Should not do type_name or have an unknown type! close socket
                                 return false;
@@ -691,7 +718,8 @@ class TCPConnectionManager {
                         remaining -= require;
                         contentBuffer.rewind();
                         Log.v(TAG, "finished reading bytes length=%d", contentBuffer.remaining());
-                        socketChannelEventHandler.onSocketChannelDataReceived(socketChannel, contentBuffer.array());
+                        if (socketChannelEventHandler != null)
+                            socketChannelEventHandler.onSocketChannelDataReceived(socketChannel, contentBuffer.array());
                         state = STATE_READ_MAGIC_TYPE;
                         continue;
                     }
