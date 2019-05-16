@@ -43,7 +43,7 @@ public class Context {
 
     }
 
-    public synchronized Looper getLooper() {
+    public synchronized Looper getMainLooper() {
         if (looper == null) {
             looper = new Looper();
         }

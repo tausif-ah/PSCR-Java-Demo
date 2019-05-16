@@ -39,8 +39,8 @@ public class LinkLayer {
      *
      * @see Device
      */
-    public static void init(Application application, InetSocketAddress groupOwnerAddress) {
-        defaultInstance = new LinkLayer_Impl_PC(application, groupOwnerAddress);
+    public static void init(Application application) {
+        defaultInstance = new LinkLayer_Impl_PC(application);
     }
 
     /**

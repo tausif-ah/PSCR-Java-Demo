@@ -1,11 +1,28 @@
 package nist.p_70nanb17h188.demo.pscr19.logic;
 
-import java.io.PrintStream;
+import android.os.Build;
 
-/**
- * Some helper functions that can be used in all classes.
- */
+import java.io.PrintStream;
+import java.util.Random;
+
 public class Helper {
+    public static final Random DEFAULT_RANDOM = new Random();
+    public static final String CANDIDATE_CHARSET_NUMBERS = "0123456789";
+    public static final String CANDIDATE_CHARSET_LETTERS_CAPITALIZED = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    public static final String CANDIDATE_CHARSET_LETTERS_UNCAPITALIZED = "abcdefghijklmnopqrstuvwxyz";
+    public static final String CANDIDATE_CHARSET_LETTERS = CANDIDATE_CHARSET_LETTERS_UNCAPITALIZED + CANDIDATE_CHARSET_LETTERS_CAPITALIZED;
+    public static final String CANDIDATE_CHARSET_LETTERS_NUMBERS = CANDIDATE_CHARSET_LETTERS + CANDIDATE_CHARSET_NUMBERS;
+    public static final String CANDIDATE_CHARSET_LETTERS_NUMBERS_SPACES = CANDIDATE_CHARSET_LETTERS_NUMBERS + " \t\n";
+    public static final int INTEGER_SIZE;
+
+    static {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            INTEGER_SIZE = Integer.BYTES ;
+        } else {
+            INTEGER_SIZE = 4;
+        }
+    }
+
     private Helper() {
     }
 
@@ -15,6 +32,18 @@ public class Helper {
             StackTraceElement s = elements[i];
             ps.printf("\tat %s.%s(%s:%d)%n", s.getClassName(), s.getMethodName(), s.getFileName(), s.getLineNumber());
         }
+    }
+
+    public static String getRandomString(int lengthMin, int lengthMax, String candidateCharSet) {
+        if (lengthMin <= 0 || lengthMax < lengthMin)
+            throw new IllegalArgumentException("lengthMin and lengthMax should be > 0 and lengthMax should > lengthMin");
+
+        int length = lengthMin == lengthMax ? lengthMin : DEFAULT_RANDOM.nextInt(lengthMax - lengthMin) + lengthMin;
+        char[] ret = new char[length];
+        for (int i = 0; i < length; i++) {
+            ret[i] = candidateCharSet.charAt(DEFAULT_RANDOM.nextInt(candidateCharSet.length()));
+        }
+        return new String(ret);
     }
 
 }

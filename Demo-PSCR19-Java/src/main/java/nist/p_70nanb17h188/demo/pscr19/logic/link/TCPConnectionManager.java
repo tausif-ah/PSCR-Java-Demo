@@ -14,11 +14,12 @@ import java.nio.channels.Selector;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
 import java.nio.channels.spi.SelectorProvider;
-import java.util.Arrays;
+import java.nio.charset.Charset;
 import java.util.LinkedList;
 import java.util.Queue;
 
 import nist.p_70nanb17h188.demo.pscr19.logic.Device;
+import nist.p_70nanb17h188.demo.pscr19.logic.Helper;
 import nist.p_70nanb17h188.demo.pscr19.logic.log.Log;
 
 class TCPConnectionManager {
@@ -112,6 +113,7 @@ class TCPConnectionManager {
         SelectionKey key = serverSocketChannel.keyFor(selector);
         // did not add to the selector, not my responsibility
         if (key == null) {
+            Log.e(TAG, "Cannot fine key for ServerSocketChannel (%s), not registered!", serverSocketChannel);
             return;
         }
         ServerSocketChannelEventHandler serverSocketChannelEventHandler = (ServerSocketChannelEventHandler) key.attachment();
@@ -165,10 +167,24 @@ class TCPConnectionManager {
         SelectionKey key = socketChannel.keyFor(selector);
         // did not add to selector, not my responsibility
         if (key == null) {
+            Log.e(TAG, "Cannot fine key for SocketChannel (%s), not registered!", socketChannel);
             return;
         }
         SocketChannelBufferHandler socketChannelBufferHandler = (SocketChannelBufferHandler) key.attachment();
         innerCloseSocketChannel(key, socketChannelBufferHandler);
+    }
+
+    void writeToSocket(@NonNull SocketChannel socketChannel, @NonNull byte[] data) {
+        SelectionKey key = socketChannel.keyFor(selector);
+        // did not add to selector, not my responsibility
+        if (key == null) {
+            Log.e(TAG, "Cannot fine key for SocketChannel (%s), not registered!", socketChannel);
+            return;
+        }
+        SocketChannelBufferHandler socketChannelBufferHandler = (SocketChannelBufferHandler) key.attachment();
+        socketChannelBufferHandler.writeData(data);
+        key.interestOps(key.interestOps() | SelectionKey.OP_WRITE);
+        selector.wakeup();
     }
 
     private void innerCloseSocketChannel(SelectionKey key, SocketChannelBufferHandler socketChannelBufferHandler) {
@@ -185,10 +201,6 @@ class TCPConnectionManager {
             }
         }
         key.cancel();
-    }
-
-    void writeToSocket(@NonNull SocketChannel socketChannel, @NonNull byte[] data) {
-        // TODO:
     }
 
     private void mainLoop() {
@@ -297,8 +309,11 @@ class TCPConnectionManager {
         try {
             numRead = socketChannel.read(readBuffer);
             if (numRead >= 0) {
-                socketChannelBufferHandler.bufferBytes(readBuffer, numRead);
-                return;
+                readBuffer.rewind();
+                if (socketChannelBufferHandler.bufferBytes(readBuffer.array(), numRead)) {
+                    return;
+                }
+                // we believe that the other side is not acting as the program requires. kill the socket.
             }
         } catch (IOException e) {
             Log.e(TAG, e, "Error in reading! %s", socketChannel);
@@ -410,15 +425,16 @@ class TCPConnectionManager {
         private static final byte TYPE_NAME = 1;
         private static final byte TYPE_KEEP_ALIVE = 2;
         private static final byte TYPE_DATA = 3;
-        private static final long KEEP_ALIVE_DURATION_MS = 2000;
+        private static final long KEEP_ALIVE_DURATION_MS = 5000;
+        private static final int KEEP_ALIVE_DURATION_MS_EPSLONE = 4000;
         private static final long GET_NAME_TIMEOUT_MS = 5000;
+        private static final Charset DEFAULT_CHARSET = Charset.forName("UTF-8");
 
         final SocketChannel socketChannel;
         final SocketChannelEventHandler socketChannelEventHandler;
-        private long lastSendTime = 0;
+        private long lastAliveTime = 0;
         private long connectedTime;
         private Queue<ByteBuffer> toSend = new LinkedList<>();
-        private final ByteBuffer header_buffer = ByteBuffer.allocate(Integer.BYTES * 2 + 1);
         private String name;
 
         SocketChannelBufferHandler(SocketChannel socketChannel, SocketChannelEventHandler socketChannelEventHandler) {
@@ -433,16 +449,16 @@ class TCPConnectionManager {
         }
 
         void writeName() {
-            byte[] data = Device.getName().getBytes();
-            sendVariableLengthData(TYPE_NAME, data);
+            byte[] data = Device.getName().getBytes(DEFAULT_CHARSET);
+            writeVariableLengthData(TYPE_NAME, data);
         }
 
         void writeData(byte[] data) {
-            sendVariableLengthData(TYPE_DATA, data);
+            writeVariableLengthData(TYPE_DATA, data);
         }
 
-        private void sendVariableLengthData(byte type, byte[] data) {
-            ByteBuffer buffer = ByteBuffer.allocate(Integer.BYTES * 2 + 1);
+        private void writeVariableLengthData(byte type, byte[] data) {
+            ByteBuffer buffer = ByteBuffer.allocate(Helper.INTEGER_SIZE * 2 + 1);
             buffer.putInt(MAGIC);
             buffer.put(type);
             buffer.putInt(data.length);
@@ -471,7 +487,7 @@ class TCPConnectionManager {
                 return -1;
             }
 
-            if (now - lastSendTime < KEEP_ALIVE_DURATION_MS) {
+            if (now - lastAliveTime < KEEP_ALIVE_DURATION_MS + (long)Helper.DEFAULT_RANDOM.nextInt(KEEP_ALIVE_DURATION_MS_EPSLONE)) {
                 return 0;
             }
             // If we still have data to write, we don't have to send yet another keep-alive message
@@ -480,11 +496,11 @@ class TCPConnectionManager {
                     return 0;
                 }
             }
-            ByteBuffer buffer = ByteBuffer.allocate(Integer.BYTES + 1);
+            ByteBuffer buffer = ByteBuffer.allocate(Helper.INTEGER_SIZE + 1);
             buffer.putInt(MAGIC);
             buffer.put(TYPE_KEEP_ALIVE);
             buffer.rewind();
-            lastSendTime = now;
+            lastAliveTime = now;
             synchronized (this) {
                 toSend.offer(buffer);
             }
@@ -495,7 +511,7 @@ class TCPConnectionManager {
          * Performs write.
          *
          * @return true if no data pending.
-         * @throws IOException
+         * @throws IOException If failed in writing in the socket.
          */
         boolean performWrite() throws IOException {
             Log.d(TAG, "performWrite!");
@@ -503,7 +519,7 @@ class TCPConnectionManager {
                 if (toSend.isEmpty()) {
                     return true;
                 }
-                lastSendTime = System.currentTimeMillis();
+                lastAliveTime = System.currentTimeMillis();
                 while (!toSend.isEmpty()) {
                     ByteBuffer buffer = toSend.peek();
                     socketChannel.write(buffer);
@@ -517,14 +533,173 @@ class TCPConnectionManager {
             return true;
         }
 
-        void bufferBytes(ByteBuffer buffer, int size) {
-            if (size == 0) {
-                return;
+        private static final int STATE_READ_NAME_MAGIC_TYPE = 0;
+        private static final int STATE_READ_NAME_LENGTH = 1;
+        private static final int STATE_READ_NAME_CONTENT = 2;
+        private static final int STATE_READ_MAGIC_TYPE = 3;
+        private static final int STATE_READ_LENGTH = 4;
+        private static final int STATE_READ_PAYLOAD = 5;
+
+        private int state = STATE_READ_NAME_MAGIC_TYPE;
+        private final ByteBuffer headerBuffer = ByteBuffer.allocate(Helper.INTEGER_SIZE + 1);
+        private final ByteBuffer sizeBuffer = ByteBuffer.allocate(Helper.INTEGER_SIZE);
+        private ByteBuffer contentBuffer;
+
+        /**
+         * Buffers some data into the read buffer.
+         *
+         * @param buffer The buffer to be added.
+         * @param numRead The number of bytes in the buffer available.
+         * @return True if read is OK. On false, the manager should close the
+         * socket.
+         */
+        boolean bufferBytes(byte[] buffer, int numRead) {
+            if (numRead == 0) {
+                return true;
             }
-            buffer.rewind();
-            byte[] buf = new byte[size];
-            buffer.get(buf);
-            Log.i(TAG, "Read (%d)%n%s", size, Arrays.toString(buf));
+            lastAliveTime = System.currentTimeMillis();
+            int start = 0, remaining = numRead;
+            for (;;) {
+                if (remaining == 0) {
+                    return true;
+                }
+                switch (state) {
+                    case STATE_READ_NAME_MAGIC_TYPE: {
+                        int require = headerBuffer.remaining();
+                        // not enough bytes, read and keep buffer
+                        if (require > remaining) {
+                            headerBuffer.put(buffer, start, remaining);
+                            return true;
+                        }
+                        // have enough bytes, read magic and type
+                        headerBuffer.put(buffer, start, require);
+                        start += require;
+                        remaining -= require;
+                        headerBuffer.rewind();
+                        int magic = headerBuffer.getInt();
+                        // first 4 bytes has to be MAGIC
+                        if (magic != MAGIC) {
+                            return false;
+                        }
+                        Log.v(TAG, "Got MAGIC!");
+                        byte type = headerBuffer.get();
+                        // type has to be name
+                        if (type != TYPE_NAME) {
+                            return false;
+                        }
+                        Log.v(TAG, "type is NAME!");
+                        state = STATE_READ_NAME_LENGTH;
+                        headerBuffer.rewind();
+                        continue;
+                    }
+                    case STATE_READ_NAME_LENGTH: {
+                        int require = sizeBuffer.remaining();
+                        if (require > remaining) {
+                            sizeBuffer.put(buffer, start, remaining);
+                            return true;
+                        }
+                        // have enough bytes, read magic and type
+                        sizeBuffer.put(buffer, start, require);
+                        start += require;
+                        remaining -= require;
+                        sizeBuffer.rewind();
+                        int size = sizeBuffer.getInt();
+                        sizeBuffer.rewind();
+                        Log.v(TAG, "size=%d", size);
+                        contentBuffer = ByteBuffer.allocate(size);
+                        state = STATE_READ_NAME_CONTENT;
+                        continue;
+                    }
+                    case STATE_READ_NAME_CONTENT: {
+                        int require = contentBuffer.remaining();
+                        if (require > remaining) {
+                            contentBuffer.put(buffer, start, remaining);
+                            return true;
+                        }
+                        contentBuffer.put(buffer, start, require);
+                        start += require;
+                        remaining -= require;
+                        contentBuffer.rewind();
+                        name = new String(contentBuffer.array(), DEFAULT_CHARSET);
+                        Log.v(TAG, "name=%s", name);
+                        socketChannelEventHandler.onSocketChannelNameReceived(socketChannel, name);
+                        state = STATE_READ_MAGIC_TYPE;
+                        continue;
+                    }
+                    case STATE_READ_MAGIC_TYPE: {
+                        int require = headerBuffer.remaining();
+                        // not enough bytes, read and keep buffer
+                        if (require > remaining) {
+                            headerBuffer.put(buffer, start, remaining);
+                            return true;
+                        }
+                        // have enough bytes, read magic and type
+                        headerBuffer.put(buffer, start, require);
+                        start += require;
+                        remaining -= require;
+                        headerBuffer.rewind();
+                        int magic = headerBuffer.getInt();
+                        // first 4 bytes has to be MAGIC
+                        if (magic != MAGIC) {
+                            return false;
+                        }
+                        Log.v(TAG, "Got MAGIC!");
+                        byte type = headerBuffer.get();
+                        headerBuffer.rewind();
+                        switch (type) {
+                            case TYPE_DATA:
+                                // should now read data length
+                                state = STATE_READ_LENGTH;
+                                Log.v(TAG, "type is DATA!");
+                                continue;
+                            case TYPE_KEEP_ALIVE:
+                                Log.v(TAG, "type is KEEP_ALIVE!");
+                                state = STATE_READ_MAGIC_TYPE;
+                                continue;
+                            // case TYPE_NAME:
+                            default:
+                                // Should not do type_name or have an unknown type! close socket
+                                return false;
+                        }
+                    }
+                    case STATE_READ_LENGTH: {
+                        int require = sizeBuffer.remaining();
+                        if (require > remaining) {
+                            sizeBuffer.put(buffer, start, remaining);
+                            return true;
+                        }
+                        // have enough bytes, read magic and type
+                        sizeBuffer.put(buffer, start, require);
+                        start += require;
+                        remaining -= require;
+                        sizeBuffer.rewind();
+                        int size = sizeBuffer.getInt();
+                        sizeBuffer.rewind();
+                        Log.v(TAG, "size=%d", size);
+                        contentBuffer = ByteBuffer.allocate(size);
+                        state = STATE_READ_PAYLOAD;
+                        continue;
+                    }
+                    case STATE_READ_PAYLOAD: {
+                        int require = contentBuffer.remaining();
+                        if (require > remaining) {
+                            contentBuffer.put(buffer, start, remaining);
+                            return true;
+                        }
+                        contentBuffer.put(buffer, start, require);
+                        start += require;
+                        remaining -= require;
+                        contentBuffer.rewind();
+                        Log.v(TAG, "finished reading bytes length=%d", contentBuffer.remaining());
+                        socketChannelEventHandler.onSocketChannelDataReceived(socketChannel, contentBuffer.array());
+                        state = STATE_READ_MAGIC_TYPE;
+                        continue;
+                    }
+                    default:
+                        return false;
+
+                }
+            }
         }
     }
 }

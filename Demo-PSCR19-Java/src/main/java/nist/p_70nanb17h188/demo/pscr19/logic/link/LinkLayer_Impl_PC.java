@@ -2,6 +2,7 @@ package nist.p_70nanb17h188.demo.pscr19.logic.link;
 
 import nist.p_70nanb17h188.demo.pscr19.logic.Device;
 import android.app.Application;
+import android.os.Handler;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.channels.SocketChannel;
@@ -19,25 +20,25 @@ import nist.p_70nanb17h188.demo.pscr19.logic.log.Log;
 final class LinkLayer_Impl_PC implements TCPConnectionManager.SocketChannelEventHandler {
 
     private static final String TAG = "LinkLayer_Impl_PC";
-
-    private final InetSocketAddress groupOwnerAddress;
+    private static final long DEFAULT_RECONNECT_DELAY_MS = 2000;
+    private final Handler handler;
 
     /**
      * Singleton pattern, prevent the class to be instantiated by the others.
      */
-    LinkLayer_Impl_PC(Application application, InetSocketAddress groupOwnerAddress) {
-        System.out.printf("LinkLayer_Impl on %s initialized!%n", Device.getName());
+    LinkLayer_Impl_PC(Application application) {
         TCPConnectionManager instance = TCPConnectionManager.init();
-        this.groupOwnerAddress = groupOwnerAddress;
+        handler = new Handler(application.getApplicationContext().getMainLooper());
         if (instance == null) {
             Log.e(TAG, "Failed in creating TCP Connection Manager!");
             return;
         }
         initConnection();
+        Log.d("LinkLayer_Impl", "%s initialized", Device.getName());
     }
 
-    private void initConnection() {
-        TCPConnectionManager.getDefaultInstance().addSocketChannel(groupOwnerAddress, this);
+    void initConnection() {
+        TCPConnectionManager.getDefaultInstance().addSocketChannel(Constants.WIFI_DIRECT_SERVER_SOCKET_ADDRESS, this);
     }
 
     public boolean sendData(NeighborID id, byte[] data, int start, int len) {
@@ -80,7 +81,18 @@ final class LinkLayer_Impl_PC implements TCPConnectionManager.SocketChannelEvent
 
     @Override
     public void onSocketConnectFailed(SocketChannel socketChannel) {
-        Log.v(TAG, "Socket channel connection failed!");
+        Log.v(TAG, "Socket channel connection failed! Retry in %dms", DEFAULT_RECONNECT_DELAY_MS);
+        handler.postDelayed(this::initConnection, DEFAULT_RECONNECT_DELAY_MS);
+    }
+
+    @Override
+    public void onSocketChannelClosed(SocketChannel socketChannel) {
+        Log.v(TAG, "Socket channel closed! Retry in %dms", DEFAULT_RECONNECT_DELAY_MS);
+        handler.postDelayed(this::initConnection, DEFAULT_RECONNECT_DELAY_MS);
+    }
+
+    @Override
+    public void onSocketChannelCloseFailed(SocketChannel socketChannel) {
     }
 
     @Override
@@ -89,14 +101,5 @@ final class LinkLayer_Impl_PC implements TCPConnectionManager.SocketChannelEvent
 
     @Override
     public void onSocketChannelDataReceived(SocketChannel socketChannel, byte[] data) {
-    }
-
-    @Override
-    public void onSocketChannelClosed(SocketChannel socketChannel) {
-        Log.v(TAG, "Socket channel closed!");
-    }
-
-    @Override
-    public void onSocketChannelCloseFailed(SocketChannel socketChannel) {
     }
 }
