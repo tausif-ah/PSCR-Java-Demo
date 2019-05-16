@@ -1,29 +1,28 @@
 package nist.p_70nanb17h188.demo.pscr19.logic.link;
 
+import android.support.annotation.NonNull;
+
 /**
  * ID for neighbors. Unique for each neighbor.
- *
- * Override equals, hashcode and toString functions.
- *
- * Here is an example.
- *
  */
 public class NeighborID {
 
-    private final int id;
+    @NonNull
+    private final String name;
 
-    public NeighborID(int id) {
-        this.id = id;
+    NeighborID(@NonNull String name) {
+        this.name = name;
     }
 
-    public int getId() {
-        return id;
+    @NonNull
+    public String getName() {
+        return name;
     }
 
     @Override
     public int hashCode() {
         int hash = 3;
-        hash = 53 * hash + this.id;
+        hash = 53 * hash + this.name.hashCode();
         return hash;
     }
 
@@ -39,12 +38,12 @@ public class NeighborID {
             return false;
         }
         final NeighborID other = (NeighborID) obj;
-        return this.id == other.id;
+        return this.name.equals(other.name);
     }
 
+    @NonNull
     @Override
     public String toString() {
-        return "NeighborID{" + "id=" + id + '}';
+        return String.format("Neighbor{%s}", name);
     }
-
 }
