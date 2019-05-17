@@ -14,7 +14,7 @@ public class Main {
     public static final String TAG = "Main";
 
 
-    public static void main(String[] args) throws InterruptedException, UnknownHostException {
+    public static void main(String[] args) throws Exception {
         if (args.length > 0 && args[0].equals("S")) {
             TCPConnectionServer.startServer();
         } else {
