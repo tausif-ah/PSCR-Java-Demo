@@ -36,9 +36,11 @@ public class TCPConnectionClient {
         LinkLayer.init(application);
 //        NetLayer.init();
 //        System.out.println("Initialized!");
-        try {
-            Thread.sleep(90000);
-        } catch (InterruptedException ex) {
+        for (;;) {
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException ex) {
+            }
         }
     }
 
