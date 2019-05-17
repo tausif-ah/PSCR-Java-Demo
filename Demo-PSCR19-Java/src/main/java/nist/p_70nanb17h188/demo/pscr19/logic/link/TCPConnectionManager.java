@@ -24,17 +24,6 @@ import nist.p_70nanb17h188.demo.pscr19.logic.Helper;
 import nist.p_70nanb17h188.demo.pscr19.logic.log.Log;
 
 class TCPConnectionManager {
-    private static class PendingSocketChannel {
-        final SocketChannel channel;
-        final InetSocketAddress remoteAddress;
-
-        public PendingSocketChannel(SocketChannel channel, InetSocketAddress remoteAddress) {
-            this.channel = channel;
-            this.remoteAddress = remoteAddress;
-        }
-    }
-
-
     private static final String TAG = "TCPConnectionManager";
     private static final int DEFAULT_READ_BUFFER_SIZE = 8192;
     // if the value is too small, a lot of computation overhead
@@ -93,7 +82,6 @@ class TCPConnectionManager {
             socketChannel.socket().setTcpNoDelay(true);
             socketChannel.socket().setKeepAlive(true);
         }
-
     }
 
     /**
@@ -201,22 +189,6 @@ class TCPConnectionManager {
         selector.wakeup();
     }
 
-    private void innerCloseSocketChannel(@NonNull SelectionKey key, @NonNull SocketChannelBufferHandler socketChannelBufferHandler) {
-        SocketChannel socketChannel = socketChannelBufferHandler.socketChannel;
-        try {
-            socketChannel.close();
-            if (socketChannelBufferHandler.socketChannelEventHandler != null) {
-                socketChannelBufferHandler.socketChannelEventHandler.onSocketChannelClosed(socketChannel);
-            }
-        } catch (IOException e) {
-            Log.e(TAG, e, "Failed in removing Socket Channel!");
-            if (socketChannelBufferHandler.socketChannelEventHandler != null) {
-                socketChannelBufferHandler.socketChannelEventHandler.onSocketChannelCloseFailed(socketChannel);
-            }
-        }
-        key.cancel();
-    }
-
     private void mainLoop() {
         while (true) {
             synchronized (toConnects) {
@@ -277,6 +249,23 @@ class TCPConnectionManager {
                 }
             }
         }
+    }
+
+
+    private void innerCloseSocketChannel(@NonNull SelectionKey key, @NonNull SocketChannelBufferHandler socketChannelBufferHandler) {
+        SocketChannel socketChannel = socketChannelBufferHandler.socketChannel;
+        try {
+            socketChannel.close();
+            if (socketChannelBufferHandler.socketChannelEventHandler != null) {
+                socketChannelBufferHandler.socketChannelEventHandler.onSocketChannelClosed(socketChannel);
+            }
+        } catch (IOException e) {
+            Log.e(TAG, e, "Failed in removing Socket Channel!");
+            if (socketChannelBufferHandler.socketChannelEventHandler != null) {
+                socketChannelBufferHandler.socketChannelEventHandler.onSocketChannelCloseFailed(socketChannel);
+            }
+        }
+        key.cancel();
     }
 
     private void accept(@NonNull SelectionKey key) {
@@ -359,6 +348,16 @@ class TCPConnectionManager {
         }
         innerCloseSocketChannel(key, socketChannelBufferHandler);
 
+    }
+
+    private static class PendingSocketChannel {
+        final SocketChannel channel;
+        final InetSocketAddress remoteAddress;
+
+        PendingSocketChannel(SocketChannel channel, InetSocketAddress remoteAddress) {
+            this.channel = channel;
+            this.remoteAddress = remoteAddress;
+        }
     }
 
     interface ServerSocketChannelEventHandler {
