@@ -2,10 +2,10 @@ package nist.p_70nanb17h188.demo.pscr19.logic.link;
 
 import nist.p_70nanb17h188.demo.pscr19.logic.Device;
 import android.app.Application;
-import android.os.Handler;
+import android.content.Intent;
+import android.net.wifi.p2p.WifiP2pInfo;
+import android.net.wifi.p2p.WifiP2pManager;
 import android.support.annotation.NonNull;
-import java.io.IOException;
-import java.nio.channels.SocketChannel;
 import nist.p_70nanb17h188.demo.pscr19.logic.log.Log;
 
 /**
@@ -15,66 +15,35 @@ import nist.p_70nanb17h188.demo.pscr19.logic.log.Log;
  * connection is made by the user. We only need to establish a connection to
  * WiFi group master and keep trying it.
  */
-final class LinkLayer_Impl_PC implements TCPConnectionManager.SocketChannelEventHandler {
+final class LinkLayer_Impl_PC {
 
     private static final String TAG = "LinkLayer_Impl_PC";
     private static final long DEFAULT_RECONNECT_DELAY_MS = 2000;
-    @NonNull
-    private final Handler handler;
 
     /**
      * Singleton pattern, prevent the class to be instantiated by the others.
      */
     LinkLayer_Impl_PC(@NonNull Application application) {
         TCPConnectionManager instance = TCPConnectionManager.init();
-        handler = new Handler(application.getApplicationContext().getMainLooper());
         if (instance == null) {
-            Log.e(TAG, "Failed in creating TCP Connection Manager!");
-            return;
+            Log.e(TAG, "Failed in creating TCPConnectionManager!!");
         }
-        initConnection();
+        WifiTCPConnectionManager.init(application);
         Log.d("LinkLayer_Impl", "%s initialized", Device.getName());
+        WifiP2pInfo groupInfo = new WifiP2pInfo(true, false, Constants.WIFI_DIRECT_SERVER_ADDRESS);
+
+        application.getApplicationContext().sendBroadcast(
+                new Intent(WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION)
+                        .putExtra(WifiP2pManager.EXTRA_WIFI_P2P_INFO, groupInfo));
     }
 
-    void initConnection() {
-        TCPConnectionManager.getDefaultInstance().addSocketChannel(Constants.WIFI_DIRECT_SERVER_SOCKET_ADDRESS, this);
-    }
-
-    public boolean sendData(@NonNull NeighborID id, @NonNull byte[] data, int start, int len) {
-        // Do not forget to flush stream after each send, when in TCP
-        return false;
-    }
-
-    @Override
-    public void onSocketConnected(@NonNull SocketChannel socketChannel) {
-        try {
-            Log.v(TAG, "Socket channel connected! addr=%s", socketChannel.getRemoteAddress());
-        } catch (IOException ex) {
-            ex.printStackTrace(System.err);
+    boolean sendData(@NonNull NeighborID id, @NonNull byte[] data, int start, int len) {
+        // prefer Wifi over Bluetooth
+        WifiTCPConnectionManager manager = WifiTCPConnectionManager.getDefaultInstance();
+        if (manager == null) {
+            return false;
         }
+        return manager.sendData(id, data, start, len);
     }
 
-    @Override
-    public void onSocketConnectFailed(@NonNull SocketChannel socketChannel) {
-        Log.v(TAG, "Socket channel connection failed! Retry in %dms", DEFAULT_RECONNECT_DELAY_MS);
-        handler.postDelayed(this::initConnection, DEFAULT_RECONNECT_DELAY_MS);
-    }
-
-    @Override
-    public void onSocketChannelClosed(@NonNull SocketChannel socketChannel) {
-        Log.v(TAG, "Socket channel closed! Retry in %dms", DEFAULT_RECONNECT_DELAY_MS);
-        handler.postDelayed(this::initConnection, DEFAULT_RECONNECT_DELAY_MS);
-    }
-
-    @Override
-    public void onSocketChannelCloseFailed(@NonNull SocketChannel socketChannel) {
-    }
-
-    @Override
-    public void onSocketChannelNameReceived(@NonNull SocketChannel socketChannel, @NonNull String name) {
-    }
-
-    @Override
-    public void onSocketChannelDataReceived(@NonNull SocketChannel socketChannel, @NonNull byte[] data) {
-    }
 }

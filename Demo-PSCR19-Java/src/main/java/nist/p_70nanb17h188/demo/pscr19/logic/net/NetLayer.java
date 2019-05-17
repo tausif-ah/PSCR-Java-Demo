@@ -1,5 +1,7 @@
 package nist.p_70nanb17h188.demo.pscr19.logic.net;
 
+import android.app.Application;
+
 /**
  * The Naming layer functions.
  */
@@ -12,8 +14,8 @@ public class NetLayer {
      *
      * Should be initiated after the link layer!
      */
-    public static void init() {
-        defaultInstance = new NetLayer_Impl();
+    public static void init(Application application) {
+        defaultInstance = new NetLayer_Impl(application);
     }
 
     /**

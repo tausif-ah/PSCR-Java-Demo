@@ -8,15 +8,10 @@ import android.support.annotation.NonNull;
 public class NeighborID {
 
     @NonNull
-    private final String name;
+    public final String name;
 
     NeighborID(@NonNull String name) {
         this.name = name;
-    }
-
-    @NonNull
-    public String getName() {
-        return name;
     }
 
     @Override

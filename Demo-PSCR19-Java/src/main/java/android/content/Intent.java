@@ -53,5 +53,15 @@ public class Intent {
     public Serializable getSerializableExtra(String name) {
         return (Serializable) extras.get(name);
     }
+    
+    @SuppressWarnings("unchecked")
+    public byte[] getByteArrayExtra(String name) {
+        try {
+            byte[] ret = (byte[])extras.get(name);
+            return ret;
+        } catch(ClassCastException e) {
+            return null;
+        }
+    }
 
 }

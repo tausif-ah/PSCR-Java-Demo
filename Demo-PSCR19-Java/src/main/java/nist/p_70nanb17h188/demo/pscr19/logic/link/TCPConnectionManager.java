@@ -176,17 +176,18 @@ class TCPConnectionManager {
         innerCloseSocketChannel(key, socketChannelBufferHandler);
     }
 
-    void writeToSocket(@NonNull SocketChannel socketChannel, @NonNull byte[] data) {
+    boolean writeToSocket(@NonNull SocketChannel socketChannel, @NonNull byte[] data) {
         SelectionKey key = socketChannel.keyFor(selector);
         // did not add to selector, not my responsibility
         if (key == null) {
             Log.e(TAG, "Cannot fine key for SocketChannel (%s), not registered!", socketChannel);
-            return;
+            return false;
         }
         SocketChannelBufferHandler socketChannelBufferHandler = (SocketChannelBufferHandler) key.attachment();
         socketChannelBufferHandler.writeData(data);
         key.interestOps(key.interestOps() | SelectionKey.OP_WRITE);
         selector.wakeup();
+        return true;
     }
 
     private void mainLoop() {
@@ -606,13 +607,13 @@ class TCPConnectionManager {
                         if (magic != MAGIC) {
                             return false;
                         }
-                        Log.v(TAG, "Got MAGIC!");
+                        // Log.v(TAG, "Got MAGIC!");
                         byte type = headerBuffer.get();
                         // type has to be name
                         if (type != TYPE_NAME) {
                             return false;
                         }
-                        Log.v(TAG, "type is NAME!");
+                        // Log.v(TAG, "type is NAME!");
                         state = STATE_READ_NAME_LENGTH;
                         headerBuffer.rewind();
                         continue;
@@ -630,7 +631,7 @@ class TCPConnectionManager {
                         sizeBuffer.rewind();
                         int size = sizeBuffer.getInt();
                         sizeBuffer.rewind();
-                        Log.v(TAG, "size=%d", size);
+                        // Log.v(TAG, "size=%d", size);
                         contentBuffer = ByteBuffer.allocate(size);
                         state = STATE_READ_NAME_CONTENT;
                         continue;
@@ -669,17 +670,17 @@ class TCPConnectionManager {
                         if (magic != MAGIC) {
                             return false;
                         }
-                        Log.v(TAG, "Got MAGIC!");
+                        // Log.v(TAG, "Got MAGIC!");
                         byte type = headerBuffer.get();
                         headerBuffer.rewind();
                         switch (type) {
                             case TYPE_DATA:
                                 // should now read data length
                                 state = STATE_READ_LENGTH;
-                                Log.v(TAG, "type is DATA!");
+                                //Log.v(TAG, "type is DATA!");
                                 continue;
                             case TYPE_KEEP_ALIVE:
-                                Log.v(TAG, "type is KEEP_ALIVE!");
+                                Log.v(TAG, "got KEEP_ALIVE!");
                                 state = STATE_READ_MAGIC_TYPE;
                                 continue;
                                 // case TYPE_NAME:
@@ -701,7 +702,7 @@ class TCPConnectionManager {
                         sizeBuffer.rewind();
                         int size = sizeBuffer.getInt();
                         sizeBuffer.rewind();
-                        Log.v(TAG, "size=%d", size);
+                        //Log.v(TAG, "size=%d", size);
                         contentBuffer = ByteBuffer.allocate(size);
                         state = STATE_READ_PAYLOAD;
                         continue;
