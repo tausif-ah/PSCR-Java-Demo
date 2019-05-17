@@ -37,7 +37,7 @@ public class Log {
     public static void e(String tag, String msg, Throwable tr) {
         output.printf(Locale.US, "[%s] %s/%s: %s%n", DEFAULT_DATE_FORMAT.format(new Date()), "E", tag, msg);
         if (tr != null) {
-            tr.printStackTrace(System.out);
+            tr.printStackTrace(output);
         }
     }
 }
