@@ -2,9 +2,12 @@ package nist.p_70nanb17h188.demo.pscr19;
 
 import android.app.Application;
 import android.os.Handler;
-import java.net.UnknownHostException;
+import java.io.PrintStream;
+import java.util.Arrays;
+import nist.p_70nanb17h188.demo.pscr19.logic.link.LinkLayer;
 import nist.p_70nanb17h188.demo.pscr19.logic.link.TCPConnectionClient;
-import nist.p_70nanb17h188.demo.pscr19.logic.link.TCPConnectionServer;
+import nist.p_70nanb17h188.demo.pscr19.logic.log.Log;
+import nist.p_70nanb17h188.demo.pscr19.logic.net.NetLayer;
 
 /**
  * Application that runs the demo.
@@ -13,15 +16,25 @@ public class Main {
 
     public static final String TAG = "Main";
 
-
     public static void main(String[] args) throws Exception {
-        if (args.length > 0 && args[0].equals("S")) {
-            TCPConnectionServer.startServer();
-        } else {
-            TCPConnectionClient.startClient();
+        if (args.length < 1) {
+            System.out.println("java Main %deviceName%");
+            return;
         }
-    }
 
+        PrintStream logOut = new PrintStream("log.txt");
+        android.util.Log.redirectOutput(logOut);
+        Log.init(1000);
+
+        Device.setName(args[0]);
+        Log.d(TAG, "Existing names: %s", Arrays.toString(Device.getExistingNames()));
+        Log.d(TAG, "I am %s", Device.getName());
+
+        LinkLayer.init();
+        NetLayer.init();
+        
+        TCPConnectionClient.startClient();
+    }
 
     public static void testLooper(Application application) throws InterruptedException {
         Handler h = new Handler(application.getApplicationContext().getMainLooper());
