@@ -8,15 +8,15 @@ import java.util.concurrent.atomic.AtomicLong;
 public class LogItem {
     private static final AtomicLong GLOBAL_SERIAL = new AtomicLong(1);
 
-    public final long id;
+    private final long id;
     @NonNull
-    public final Date time;
+    private final Date time;
     @NonNull
-    public final LogType type;
+    private final LogType type;
     @NonNull
-    public final String tag;
+    private final String tag;
     @NonNull
-    public final String message;
+    private final String message;
 
     LogItem(@NonNull LogType type, @NonNull String tag, @NonNull String message) {
         id = GLOBAL_SERIAL.getAndIncrement();
@@ -26,4 +26,27 @@ public class LogItem {
         this.message = message;
     }
 
+    public long getId() {
+        return id;
+    }
+
+    @NonNull
+    public Date getTime() {
+        return time;
+    }
+
+    @NonNull
+    public LogType getType() {
+        return type;
+    }
+
+    @NonNull
+    public String getTag() {
+        return tag;
+    }
+
+    @NonNull
+    public String getMessage() {
+        return message;
+    }
 }

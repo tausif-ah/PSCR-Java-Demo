@@ -21,5 +21,12 @@ public class WifiP2pInfo {
         this.groupOwnerAddress = groupOwnerAddress;
     }
 
+    @Override
+    public String toString() {
+        return "WifiP2pInfo{" + "groupFormed=" + groupFormed + ", isGroupOwner=" + isGroupOwner + ", groupOwnerAddress=" + groupOwnerAddress + '}';
+    }
+    
+    
+
     
 }

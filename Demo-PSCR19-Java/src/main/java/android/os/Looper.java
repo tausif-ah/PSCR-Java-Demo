@@ -1,5 +1,6 @@
 package android.os;
 
+import android.app.Application;
 import android.support.annotation.NonNull;
 import java.util.PriorityQueue;
 
@@ -44,8 +45,12 @@ public class Looper implements Runnable {
         synchronized (messageQueue) {
             messageQueue.add(new TimedAction(time, action));
         }
-        looperThread.interrupt();
+        if (sleeping) {
+            looperThread.interrupt();
+        }
     }
+
+    private boolean sleeping = false;
 
     @Override
     public void run() {
@@ -66,10 +71,12 @@ public class Looper implements Runnable {
             if (sleepTime <= 0) {
                 next.action.run();
             } else {
+                sleeping = true;
                 try {
                     Thread.sleep(sleepTime);
                 } catch (InterruptedException ex) {
                 }
+                sleeping = false;
             }
         }
     }

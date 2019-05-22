@@ -1,37 +1,41 @@
 package nist.p_70nanb17h188.demo.pscr19.logic.log;
 
-import android.app.Application;
-import android.content.Intent;
 import android.support.annotation.NonNull;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.util.ArrayList;
 
+import nist.p_70nanb17h188.demo.pscr19.imc.Context;
+import nist.p_70nanb17h188.demo.pscr19.imc.Intent;
+
 public class Log {
+    public static final String CONTEXT_LOG = "nist.p_70nanb17h188.demo.pscr19.logic.log";
     /**
      * Broadcast intent action indicating that a log item is added to the log list.
-     * One extra EXTRA_LOG_ITEM (nist.p_70nanb17h188.demo.pscr19.logic.log.LogItem) is the log item added.
+     * One extra EXTRA_LOG_ITEM_INSERTED ({@link LogItem}) is the log item added.
+     * Another extra EXTRA_LOG_ITEM_REMOVED ({@link LogItem} is the log item removed.
+     * Both could be null.
      * <p>
      * The latest logs can be retrieved from getLatestLogItems().
      */
-    public static final String ACTION_LOG_ITEM_INSERTED = "nist.p_70nanb17h188.demo.pscr19.logic.log.Log.itemsInserted";
-    public static final String EXTRA_LOG_ITEM = "logItem";
+    public static final String ACTION_LOG_ITEM_UPDATED = "nist.p_70nanb17h188.demo.pscr19.logic.log.itemUpdated";
+    public static final String EXTRA_LOG_ITEM_INSERTED = "logItemInserted";
+    public static final String EXTRA_LOG_ITEM_REMOVED = "logItemRemoved";
+
     public static final int DEFAULT_CAPACITY = 1000;
 
     private static Log DEFAULT_INSTANCE = null;
-    private final Application application;
     private final ArrayList<LogItem> items;
     private final int capacity;
 
-    private Log(int capacity, @NonNull Application application) {
-        this.application = application;
+    private Log(int capacity) {
         items = new ArrayList<>(capacity);
         this.capacity = capacity;
     }
 
-    public static void init(int capacity, @NonNull Application application) {
-        if (DEFAULT_INSTANCE == null) DEFAULT_INSTANCE = new Log(capacity, application);
+    public static void init(int capacity) {
+        if (DEFAULT_INSTANCE == null) DEFAULT_INSTANCE = new Log(capacity);
     }
 
     public static void v(String tag, String fmt, Object... params) {
@@ -164,13 +168,14 @@ public class Log {
     }
 
     private void _addLog(@NonNull LogItem item) {
+        Intent intent = new Intent(ACTION_LOG_ITEM_UPDATED).putExtra(EXTRA_LOG_ITEM_INSERTED, item);
         synchronized (items) {
             if (items.size() == capacity) {
-                items.remove(capacity - 1);
+                intent.putExtra(EXTRA_LOG_ITEM_REMOVED, items.remove(capacity - 1));
             }
             items.add(0, item);
         }
-        application.getApplicationContext().sendBroadcast(new Intent(ACTION_LOG_ITEM_INSERTED).putExtra(EXTRA_LOG_ITEM, item));
+        Context.getContext(CONTEXT_LOG).sendBroadcast(intent);
     }
 
     private int _getCapacity() {

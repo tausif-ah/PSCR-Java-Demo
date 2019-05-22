@@ -1,11 +1,13 @@
 package nist.p_70nanb17h188.demo.pscr19.logic.link;
 
-import nist.p_70nanb17h188.demo.pscr19.logic.Device;
-import android.app.Application;
 import android.content.Intent;
 import android.net.wifi.p2p.WifiP2pInfo;
 import android.net.wifi.p2p.WifiP2pManager;
+import nist.p_70nanb17h188.demo.pscr19.Device;
 import android.support.annotation.NonNull;
+import java.io.IOException;
+import nist.p_70nanb17h188.demo.pscr19.MyApplication;
+import nist.p_70nanb17h188.demo.pscr19.imc.DelayRunner;
 import nist.p_70nanb17h188.demo.pscr19.logic.log.Log;
 
 /**
@@ -18,32 +20,34 @@ import nist.p_70nanb17h188.demo.pscr19.logic.log.Log;
 final class LinkLayer_Impl_PC {
 
     private static final String TAG = "LinkLayer_Impl_PC";
-    private static final long DEFAULT_RECONNECT_DELAY_MS = 2000;
+
+    @NonNull
+    private final TCPConnectionManager tcpConnectionManager;
+    @NonNull
+    private final WifiTCPConnectionManager wifiTCPConnectionManager;
 
     /**
      * Singleton pattern, prevent the class to be instantiated by the others.
      */
-    LinkLayer_Impl_PC(@NonNull Application application) {
-        TCPConnectionManager instance = TCPConnectionManager.init();
-        if (instance == null) {
-            Log.e(TAG, "Failed in creating TCPConnectionManager!!");
-        }
-        WifiTCPConnectionManager.init(application);
-        Log.d("LinkLayer_Impl", "%s initialized", Device.getName());
-        WifiP2pInfo groupInfo = new WifiP2pInfo(true, false, Constants.WIFI_DIRECT_SERVER_ADDRESS);
+    LinkLayer_Impl_PC() throws IOException {
+        tcpConnectionManager = new TCPConnectionManager();
+        tcpConnectionManager.start();
+        wifiTCPConnectionManager = WifiTCPConnectionManager.createWifiTCPConnectionManager(tcpConnectionManager);
 
-        application.getApplicationContext().sendBroadcast(
-                new Intent(WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION)
-                        .putExtra(WifiP2pManager.EXTRA_WIFI_P2P_INFO, groupInfo));
+        DelayRunner.getDefaultInstance().postDelayed(1000, () -> {
+            WifiP2pInfo groupInfo = new WifiP2pInfo(true, false, Constants.WIFI_DIRECT_SERVER_ADDRESS);
+
+            MyApplication.getDefaultInstance().getApplicationContext().sendBroadcast(
+                    new Intent(WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION)
+                            .putExtra(WifiP2pManager.EXTRA_WIFI_P2P_INFO, groupInfo));
+
+        });
+        Log.d(TAG, "%s initialized", Device.getName());
     }
 
     boolean sendData(@NonNull NeighborID id, @NonNull byte[] data, int start, int len) {
         // prefer Wifi over Bluetooth
-        WifiTCPConnectionManager manager = WifiTCPConnectionManager.getDefaultInstance();
-        if (manager == null) {
-            return false;
-        }
-        return manager.sendData(id, data, start, len);
+        return wifiTCPConnectionManager.sendData(id, data, start, len);
     }
 
 }

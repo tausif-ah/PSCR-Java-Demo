@@ -5,13 +5,19 @@ import android.support.annotation.NonNull;
 /**
  * ID for neighbors. Unique for each neighbor.
  */
+
 public class NeighborID {
 
     @NonNull
-    public final String name;
+    private final String name;
 
     NeighborID(@NonNull String name) {
         this.name = name;
+    }
+
+    @NonNull
+    public String getName() {
+        return name;
     }
 
     @Override
