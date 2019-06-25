@@ -10,7 +10,6 @@ import java.util.HashSet;
 import java.util.Map;
 
 public class Context {
-
     private static final HashMap<String, Context> EXISTING_CONTEXTS = new HashMap<>();
 
     /**
@@ -23,22 +22,21 @@ public class Context {
     public static Context getContext(@NonNull String name) {
         synchronized ((EXISTING_CONTEXTS)) {
             Context ret = EXISTING_CONTEXTS.get(name);
-            if (ret == null) {
-                EXISTING_CONTEXTS.put(name, ret = new Context());
-            }
+            if (ret == null) EXISTING_CONTEXTS.put(name, ret = new Context());
             return ret;
         }
     }
 
+
     private final HashMap<String, HashSet<BroadcastReceiver>> broadcastReceivers = new HashMap<>();
+
 
     public void registerReceiver(@NonNull BroadcastReceiver broadcastReceiver, @NonNull IntentFilter filter) {
         synchronized (broadcastReceivers) {
             filter.forEachAction(a -> {
                 HashSet<BroadcastReceiver> receivers = broadcastReceivers.get(a);
-                if (receivers == null) {
+                if (receivers == null)
                     broadcastReceivers.put(a, receivers = new HashSet<>());
-                }
                 receivers.add(broadcastReceiver);
             });
         }
@@ -50,9 +48,7 @@ public class Context {
             for (Map.Entry<String, HashSet<BroadcastReceiver>> entry : broadcastReceivers.entrySet()) {
                 HashSet<BroadcastReceiver> receivers = entry.getValue();
                 receivers.remove(broadcastReceiver);
-                if (receivers.size() == 0) {
-                    toRemoves.add(entry.getKey());
-                }
+                if (receivers.size() == 0) toRemoves.add(entry.getKey());
             }
             for (String toRemove : toRemoves) {
                 broadcastReceivers.remove(toRemove);

@@ -6,12 +6,10 @@ import android.os.Looper;
 public class DelayRunner {
 
     public interface ParameterizedRunnable {
-
         void run(Object... params);
     }
 
     private class ParameterizedRunnableRunner implements Runnable {
-
         private final ParameterizedRunnable r;
         private final Object[] params;
 
@@ -61,7 +59,7 @@ public class DelayRunner {
     }
 
     public void postAtTime(long time, Runnable r) {
-        handler.postAt(r, time);
+        handler.postAtTime(r, time);
     }
 
     public void post(ParameterizedRunnable r, Object... params) {
@@ -73,7 +71,7 @@ public class DelayRunner {
     }
 
     public void postAtTime(long time, ParameterizedRunnable r, Object... params) {
-        handler.postAt(new ParameterizedRunnableRunner(r, params), time);
+        handler.postAtTime(new ParameterizedRunnableRunner(r, params), time);
     }
 
 }

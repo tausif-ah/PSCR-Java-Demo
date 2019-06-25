@@ -10,18 +10,21 @@ import nist.p_70nanb17h188.demo.pscr19.logic.log.Log;
 public class LinkLayer {
     private static final String TAG = "LinkLayer";
 
-    public static final String CONTEXT_LINK_LAYER = "nist.p_70nanb17h188.demo.pscr19.logic.link";
+    /**
+     * The context for link layer events.
+     */
+    public static final String CONTEXT_LINK_LAYER = "nist.p_70nanb17h188.demo.pscr19.logic.link.LinkLayer";
     /**
      * Broadcast intent action indicating that a link is either established or disconnected.
-     * One extra EXTRA_NEIGHBOR_ID ({@link NeighborID}) indicates the ID of the neighbor. {@code EXTRA_NEIGHBOR_ID}
-     * Another extra EXTRA_CONNECTED ({@link boolean}) indicates if the connection is established or disconnected.
+     * One extra {@link #EXTRA_NEIGHBOR_ID} ({@link NeighborID}) indicates the ID of the neighbor.
+     * Another extra {@link #EXTRA_CONNECTED} ({@link Boolean}) indicates if the connection is established or disconnected.
      */
     public static final String ACTION_LINK_CHANGED = "nist.p_70nanb17h188.demo.pscr19.logic.link.LinkLayer.linkChanged";
 
     /**
      * Broadcast intent action indicating that a piece of data is received.
-     * One extra EXTRA_NEIGHBOR_ID (nist.p_70nanb17h188.demo.pscr19.logic.link.NeighborID) indicates the ID of the neighbor that sent the data.
-     * Another extra EXTRA_DATA (byte[]) contains the data sent.
+     * One extra {@link #EXTRA_NEIGHBOR_ID} (@link {@link NeighborID}) indicates the ID of the neighbor that sent the data.
+     * Another extra {@link #EXTRA_DATA} (byte[]) contains the data sent.
      */
     public static final String ACTION_DATA_RECEIVED = "nist.p_70nanb17h188.demo.pscr19.logic.link.LinkLayer.dataReceived";
 
@@ -65,6 +68,11 @@ public class LinkLayer {
     public static boolean sendData(@NonNull NeighborID id, @NonNull byte[] data, int start, int len) {
         return defaultImplementation.sendData(id, data, start, len);
     }
+
+    public static boolean sendData(@NonNull NeighborID id, @NonNull byte[] data) {
+        return sendData(id, data, 0, data.length);
+    }
+
 
     public static LinkLayer_Impl_PC getDefaultImplementation() {
         return defaultImplementation;

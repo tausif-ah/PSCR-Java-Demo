@@ -252,8 +252,7 @@ class WifiTCPConnectionManagerClient extends WifiTCPConnectionManager implements
                 reconnect = wifiP2pInfo.groupFormed;
                 if (reconnect) {
                     address = new InetSocketAddress(wifiP2pInfo.groupOwnerAddress, Constants.WIFI_DIRECT_SERVER_LISTEN_PORT);
-                    establishConnection();
-//                    DelayRunner.getDefaultInstance().post(WifiTCPConnectionManagerClient.this::establishConnection);
+                    DelayRunner.getDefaultInstance().post(WifiTCPConnectionManagerClient.this::establishConnection);
                 } else {
                     closeConnection();
                 }

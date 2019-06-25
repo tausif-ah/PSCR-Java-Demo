@@ -2,82 +2,230 @@ package nist.p_70nanb17h188.demo.pscr19.logic.net;
 
 import android.support.annotation.NonNull;
 
+import java.nio.ByteBuffer;
+import java.util.HashMap;
 import java.util.HashSet;
 
 import nist.p_70nanb17h188.demo.pscr19.Helper;
 import nist.p_70nanb17h188.demo.pscr19.imc.Context;
-import nist.p_70nanb17h188.demo.pscr19.imc.Intent;
 import nist.p_70nanb17h188.demo.pscr19.imc.IntentFilter;
-import nist.p_70nanb17h188.demo.pscr19.logic.link.LinkLayer;
-import nist.p_70nanb17h188.demo.pscr19.logic.link.NeighborID;
 import nist.p_70nanb17h188.demo.pscr19.logic.log.Log;
-import nist.p_70nanb17h188.demo.pscr19.logic.log.LogType;
 
 public class NetLayer_Impl {
-    public static final int MAX_SEND_SIZE = 2000000;
-    public static final int MAX_SHOW_SIZE = 40;
+    private static final String TAG = "NetLayer_Impl";
+    // initiator of namespace change when a net-based change happens
+    private static final String INITIATOR_NET = "nist.p_70nanb17h188.demo.pscr19.logic.net.NetLayer_Impl.net";
 
-    public static final String CONTEXT_NET_LAYER_IMPL = "nist.p_70nanb17h188.demo.pscr19.logic.net.NetLayer_Impl";
-    public static final String ACTION_NEIGHBOR_CHANGED = "nist.p_70nanb17h188.demo.pscr19.logic.net.NetLayer_Impl.neighborChanged";
-    public static final String EXTRA_NEIGHBORS = "neighbors";
-    public static final String TAG = "NetLayer_Impl";
+    private final HashMap<Name, HashSet<DataReceivedHandler>> dataHandlers = new HashMap<>();
+    private final GossipModule gossipModule;
+    private final Namespace namespace;
 
-    private static NetLayer_Impl defaultInstance;
-    @NonNull
-    private final HashSet<NeighborID> connectedNeighbors = new HashSet<>();
+    private static final byte TYPE_DATA = 1;
+    private static final byte TYPE_NAME_CHANGE = 2;
+    private static final byte TYPE_LINK_CHANGE = 3;
+    private static final int MAGIC = 0x87654321;
 
     NetLayer_Impl() {
-        defaultInstance = this;
-
-        Context.getContext(LinkLayer.CONTEXT_LINK_LAYER).registerReceiver((context, intent) -> {
-                    switch (intent.getAction()) {
-                        case LinkLayer.ACTION_LINK_CHANGED:
-                            onLinkChanged(intent);
-                            break;
-                        case LinkLayer.ACTION_DATA_RECEIVED:
-                            onDataReceived(intent);
-                            break;
-                    }
-                },
-                new IntentFilter()
-                        .addAction(LinkLayer.ACTION_LINK_CHANGED)
-                        .addAction(LinkLayer.ACTION_DATA_RECEIVED)
-        );
+        gossipModule = new GossipModule();
+        namespace = new Namespace();
+        Context.getContext(GossipModule.CONTEXT_GOSSIP_MODULE).registerReceiver((context, intent) -> {
+            if (!intent.getAction().equals(GossipModule.ACTION_DATA_RECEIVED)) return;
+            onDataReceivedFromGossip(intent.getExtra(GossipModule.EXTRA_DATA));
+        }, new IntentFilter().addAction(GossipModule.ACTION_DATA_RECEIVED));
+        Context.getContext(Namespace.CONTEXT_NAMESPACE).registerReceiver((context, intent) -> {
+            switch (intent.getAction()) {
+                case Namespace.ACTION_NAME_CHANGED:
+                    break;
+                case Namespace.ACTION_RELATIONSHIP_CHANGED:
+                    break;
+                default:
+                    break;
+            }
+        }, new IntentFilter().addAction(Namespace.ACTION_NAME_CHANGED).addAction(Namespace.ACTION_RELATIONSHIP_CHANGED));
     }
 
-    public static NetLayer_Impl getDefaultInstance() {
-        return defaultInstance;
+    public GossipModule getGossipModule() {
+        return gossipModule;
     }
 
-    private void onLinkChanged(Intent intent) {
-        NeighborID neighborID = intent.getExtra(LinkLayer.EXTRA_NEIGHBOR_ID);
-        Boolean connected = intent.getExtra(LinkLayer.EXTRA_CONNECTED);
-        assert neighborID != null && connected != null;
-        boolean changed;
-        if (connected) changed = connectedNeighbors.add(neighborID);
-        else changed = connectedNeighbors.remove(neighborID);
-
-        if (changed)
-            Context.getContext(CONTEXT_NET_LAYER_IMPL).sendBroadcast(new Intent(ACTION_NEIGHBOR_CHANGED).putExtra(EXTRA_NEIGHBORS, connectedNeighbors.toArray(new NeighborID[0])));
+    public Namespace getNamespace() {
+        return namespace;
     }
 
-    public NeighborID[] getConnectNeighbors() {
-        return connectedNeighbors.toArray(new NeighborID[0]);
+    void sendData(@NonNull Name src, @NonNull Name dst, @NonNull byte[] data, int start, int len, boolean store) {
+        byte[] tmp = new byte[len];
+        System.arraycopy(data, start, tmp, 0, len);
+        // notify the applications
+        onDataReceived(src, dst, tmp);
+
+        int size = getWritePrefixSize() +
+                Name.WRITE_SIZE * 2 +   // src, dst
+                Helper.INTEGER_SIZE +   // len
+                len;                    // data
+        ByteBuffer buf = ByteBuffer.allocate(size);
+        writePrefix(buf, TYPE_DATA);
+        src.write(buf);
+        dst.write(buf);
+        buf.putInt(len);
+        buf.put(tmp);
+        gossipModule.addMessage(buf.array(), store);
     }
 
-    private void onDataReceived(Intent intent) {
-        NeighborID neighborID = intent.getExtra(LinkLayer.EXTRA_NEIGHBOR_ID);
-        byte[] data = intent.getExtra(LinkLayer.EXTRA_DATA);
-        assert neighborID != null && data != null;
+    void registerName(Name n, boolean add, String initiator) {
+        if (add) namespace.addName(n, initiator);
+        else namespace.removeName(n, initiator);
+    }
 
-        String str = new String(data);
-        if (data.length <= MAX_SHOW_SIZE) {
-            Log.d(TAG, "Got from %s, buf_size=%d, text=%n%s", neighborID.getName(), data.length, str);
-            Helper.notifyUser(LogType.Info, "Got from %s, buf_size=%d, text=%n%s", neighborID.getName(), data.length, str);
-        } else {
-            Log.d(TAG, "Got from %s, buf_size=%d, text_len=%d", neighborID.getName(), data.length, str.length());
-            Helper.notifyUser(LogType.Info, "Got from %s, buf_size=%d, text_len=%d", neighborID.getName(), data.length, str.length());
+    void registerRelationship(Name parent, Name child, boolean add, String initiator) {
+        if (add) namespace.addRelationship(parent, child, initiator);
+        else namespace.removeRelationship(parent, child, initiator);
+    }
+
+    boolean subscribe(Name n, DataReceivedHandler h) {
+        synchronized (dataHandlers) {
+            HashSet<DataReceivedHandler> handlers = dataHandlers.get(n);
+            if (handlers == null) {
+                dataHandlers.put(n, handlers = new HashSet<>());
+            }
+            return handlers.add(h);
         }
+    }
+
+    boolean unSubscribe(Name n, DataReceivedHandler h) {
+        synchronized (dataHandlers) {
+            HashSet<DataReceivedHandler> handlers = dataHandlers.get(n);
+            if (handlers == null) return false;
+            if (handlers.remove(h)) {
+                if (handlers.isEmpty()) {
+                    dataHandlers.remove(n);
+                }
+                return true;
+            }
+            return false;
+        }
+    }
+
+    private void onDataReceivedFromGossip(byte[] data) {
+        if (data == null) return;
+        ByteBuffer buffer = ByteBuffer.wrap(data);
+        if (buffer.remaining() < Helper.INTEGER_SIZE) {
+            Log.e(TAG, "Receive size (%d) < INTEGER_SIZE (%d)", buffer.remaining(), Helper.INTEGER_SIZE);
+            return;
+        }
+        int magic = buffer.getInt();
+        if (magic != MAGIC) {
+            Log.e(TAG, "MAGIC (0x%08x) != required (0x%08x)", magic, MAGIC);
+            return;
+        }
+        // read type
+        byte type = buffer.get();
+        switch (type) {
+            case TYPE_DATA: {
+                Name src = Name.read(buffer);
+                if (src == null) {
+                    Log.e(TAG, "TYPE_DATA, Failed in reading src");
+                    break;
+                }
+                Name dst = Name.read(buffer);
+                if (dst == null) {
+                    Log.e(TAG, "TYPE_DATA, Failed in reading dst");
+                    break;
+                }
+                if (buffer.remaining() < Helper.INTEGER_SIZE) {
+                    Log.e(TAG, "TYPE_DATA, buffer size (%d) < INTEGER_SIZE (%d)", buffer.remaining(), Helper.INTEGER_SIZE);
+                    break;
+                }
+                int size = buffer.getInt();
+                if (buffer.remaining() != size) {
+                    Log.e(TAG, "TYPE_DATA, buffer size (%d) != count (%d)", buffer.remaining(), size);
+                    break;
+                }
+                byte[] d = new byte[size];
+                buffer.get(d);
+                onDataReceived(src, dst, data);
+                break;
+            }
+            case TYPE_NAME_CHANGE: {
+                Name n = Name.read(buffer);
+                if (n == null) {
+                    Log.e(TAG, "TYPE_NAME_CHANGE, Failed in reading n");
+                    break;
+                }
+                if (buffer.remaining() != 1) {
+                    Log.e(TAG, "TYPE_NAME_CHANGE, remaing size %d != 1", buffer.remaining());
+                    break;
+                }
+                boolean added = buffer.get() != 0;
+                registerName(n, added, INITIATOR_NET);
+                break;
+            }
+            case TYPE_LINK_CHANGE: {
+                Name parent = Name.read(buffer);
+                if (parent == null) {
+                    Log.e(TAG, "TYPE_LINK_CHANGE, Failed in reading parent");
+                    break;
+                }
+                Name child = Name.read(buffer);
+                if (child == null) {
+                    Log.e(TAG, "TYPE_LINK_CHANGE, Failed in reading child");
+                    break;
+                }
+                if (buffer.remaining() != 1) {
+                    Log.e(TAG, "TYPE_LINK_CHANGE, remaing size %d != 1", buffer.remaining());
+                    break;
+                }
+                boolean added = buffer.get() != 0;
+                registerRelationship(parent, child, added, INITIATOR_NET);
+                break;
+            }
+            default:
+                Log.e(TAG, "Unknown type: 0x%02X", type & 0xFF);
+                break;
+        }
+    }
+
+    private void onDataReceived(@NonNull Name src, @NonNull Name dst, @NonNull byte[] data) {
+//        namespace.forEachDescendant();
+        // TODO: expand and send to subscribers
+    }
+
+    private void onNameChanged(Name n, boolean added, String initiator) {
+        // ignore the events from the net layer
+        if (INITIATOR_NET.equals(initiator)) return;
+        // send msg to the net
+        int size = getWritePrefixSize() +
+                Name.WRITE_SIZE +           // n
+                1;                          // added
+        ByteBuffer buffer = ByteBuffer.allocate(size);
+        writePrefix(buffer, TYPE_NAME_CHANGE);
+        n.write(buffer);
+        buffer.put(added ? (byte) 1 : (byte) 0);
+        gossipModule.addMessage(buffer.array(), true);
+    }
+
+    private void onLinkChanged(Name parent, Name child, boolean added, String initiator) {
+        // ignore the events from the net layer
+        if (INITIATOR_NET.equals(initiator)) return;
+        // send msg to the net
+        int size = getWritePrefixSize() +
+                Name.WRITE_SIZE * 2 +       // parent, child
+                1;                          // added
+        ByteBuffer buffer = ByteBuffer.allocate(size);
+        writePrefix(buffer, TYPE_NAME_CHANGE);
+        parent.write(buffer);
+        child.write(buffer);
+        buffer.put(added ? (byte) 1 : (byte) 0);
+        gossipModule.addMessage(buffer.array(), true);
+    }
+
+    private static int getWritePrefixSize() {
+        return Helper.INTEGER_SIZE +    // magic
+                1;                      // type
+    }
+
+    private static void writePrefix(@NonNull ByteBuffer buf, byte type) {
+        buf.putInt(MAGIC);
+        buf.put(type);
     }
 
 

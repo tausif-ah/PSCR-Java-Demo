@@ -271,7 +271,6 @@ class TCPConnectionManager {
                 continue;
             }
             for (SelectionKey selectedKey : selector.selectedKeys()) {
-//                Log.v(TAG, "selectedKey=%s", selectedKey);
                 if (selectedKey == null || !selectedKey.isValid()) {
                     continue;
                 }
@@ -698,6 +697,7 @@ class SocketChannelBufferHandler {
                     start += require;
                     remaining -= require;
                     contentBuffer.rewind();
+//                    Log.v(TAG, "finished reading buffer: ", contentBuffer.array());
                     Log.v(TAG, "finished reading bytes length=%d", contentBuffer.remaining());
                     if (socketChannelEventHandler != null)
                         socketChannelEventHandler.onSocketChannelDataReceived(socketChannel, contentBuffer.array());
