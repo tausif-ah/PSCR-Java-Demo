@@ -1,0 +1,4 @@
+target/*
+src/main/webapp/commanderview/*
+src/main/webapp/dispatcherview/*
+nb-configuration.xml

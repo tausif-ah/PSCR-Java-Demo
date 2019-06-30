@@ -1,8 +1,8 @@
 package android.os;
 
-import android.app.Application;
 import android.support.annotation.NonNull;
 import java.util.PriorityQueue;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Mimic the Android Looper class
@@ -12,10 +12,12 @@ public class Looper implements Runnable {
     private class TimedAction implements Comparable<TimedAction> {
 
         final long time;
+        final long serial;
         final Runnable action;
 
-        public TimedAction(long time, Runnable action) {
+        public TimedAction(long time, long serial, Runnable action) {
             this.time = time;
+            this.serial = serial;
             this.action = action;
         }
 
@@ -24,10 +26,13 @@ public class Looper implements Runnable {
             if (o == null) {
                 return 1;
             }
-            return Long.compare(time, o.time);
+            int ret = Long.compare(time, o.time);
+            if (ret != 0) return ret;
+            return Long.compare(serial, o.serial);
         }
 
     }
+    private final AtomicLong SERIAL = new AtomicLong(Long.MIN_VALUE);
     private final PriorityQueue<TimedAction> messageQueue = new PriorityQueue<>();
     private final Thread looperThread;
 
@@ -43,7 +48,7 @@ public class Looper implements Runnable {
 
     void addActionAt(@NonNull Runnable action, long time) {
         synchronized (messageQueue) {
-            messageQueue.add(new TimedAction(time, action));
+            messageQueue.add(new TimedAction(time, SERIAL.getAndIncrement(), action));
         }
         if (sleeping) {
             looperThread.interrupt();

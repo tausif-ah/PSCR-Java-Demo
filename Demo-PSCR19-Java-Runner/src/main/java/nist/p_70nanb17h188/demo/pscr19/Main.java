@@ -17,22 +17,21 @@ public class Main {
     public static final String TAG = "Main";
 
     public static void main(String[] args) throws Exception {
+//        PrintStream logOut = new PrintStream("log.txt");
+//        android.util.Log.redirectOutput(logOut);
+        Log.init(1000);
         if (args.length < 1) {
+            Log.d(TAG, "Existing names: %s", Arrays.toString(Device.getExistingNames()));
             System.out.println("java Main %deviceName%");
             return;
         }
 
-        PrintStream logOut = new PrintStream("log.txt");
-        android.util.Log.redirectOutput(logOut);
-        Log.init(1000);
-
         Device.setName(args[0]);
-        Log.d(TAG, "Existing names: %s", Arrays.toString(Device.getExistingNames()));
         Log.d(TAG, "I am %s", Device.getName());
 
         LinkLayer.init();
         NetLayer.init();
-        
+
         TCPConnectionClient.startClient();
     }
 
@@ -47,7 +46,7 @@ public class Main {
             h.post(() -> {
                 System.out.printf("[%d] added immediately%n", System.currentTimeMillis());
             });
-            h.postAt(() -> {
+            h.postAtTime(() -> {
                 System.out.printf("[%d] poste long before%n", System.currentTimeMillis());
             }, 0);
         }, 2000);
