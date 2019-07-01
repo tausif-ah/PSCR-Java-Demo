@@ -19,6 +19,8 @@ import nist.p_70nanb17h188.demo.pscr19.imc.Context;
 import nist.p_70nanb17h188.demo.pscr19.imc.Intent;
 import nist.p_70nanb17h188.demo.pscr19.imc.IntentFilter;
 import nist.p_70nanb17h188.demo.pscr19.logic.Tuple2;
+import nist.p_70nanb17h188.demo.pscr19.logic.app.messaging.MessagingName;
+import nist.p_70nanb17h188.demo.pscr19.logic.app.messaging.MessagingNameType;
 import nist.p_70nanb17h188.demo.pscr19.logic.app.messaging.MessagingNamespace;
 import nist.p_70nanb17h188.demo.pscr19.logic.app.messaging.Template;
 import nist.p_70nanb17h188.demo.pscr19.logic.log.Log;
@@ -111,7 +113,7 @@ public class DisasterManagement {
     }
 
     private static String createNamespaceChangeEvent(
-            Collection<MessagingNamespace.MessagingName> nas,
+            Collection<MessagingName> nas,
             Collection<Name> nds,
             Collection<Tuple2<Name, Name>> ras,
             Collection<Tuple2<Name, Name>> rds) {
@@ -157,7 +159,7 @@ public class DisasterManagement {
         return GSON.toJson(createEvent(EVENT_TYPE_GRAPH, value));
     }
 
-    private static String createAppNameChangeEvent(MessagingNamespace.MessagingName name) {
+    private static String createAppNameChangeEvent(MessagingName name) {
         HashMap<String, Object> value = new HashMap<>();
         value.put("i", name.getName().getValue());
         value.put("n", name.getAppName());
@@ -212,12 +214,12 @@ public class DisasterManagement {
 
         addSession(session, new Name(subId));
         // check subId
-        MessagingNamespace.MessagingName mn = MessagingNamespace.getDefaultInstance().getName(new Name(subId));
+        MessagingName mn = MessagingNamespace.getDefaultInstance().getName(new Name(subId));
         String establishString;
         if (mn == null) {
             // send: you are not subscribing to anything
             establishString = "Error: the group you are subscrbing to does not exist!";
-        } else if (mn.getType() == MessagingNamespace.MessagingNameType.Incident) {
+        } else if (mn.getType() == MessagingNameType.Incident) {
             establishString = String.format("Warning: You are subscribing to an incident group (%d, %s) directly!", mn.getName().getValue(), mn.getAppName());
         } else {
             establishString = String.format("You are now subscribing to group (%d, %s)", mn.getName().getValue(), mn.getAppName());
@@ -289,7 +291,7 @@ public class DisasterManagement {
 
     private String handleGetGraph() {
         MessagingNamespace namespace = MessagingNamespace.getDefaultInstance();
-        Collection<MessagingNamespace.MessagingName> nas = namespace.getAllNames();
+        Collection<MessagingName> nas = namespace.getAllNames();
         ArrayList<Tuple2<Name, Name>> ras = new ArrayList<>();
         nas.forEach(na -> {
             namespace.forEachChild(na, c -> ras.add(new Tuple2<>(na.getName(), c.getName())));
@@ -311,7 +313,7 @@ public class DisasterManagement {
         String n = obj.getAsJsonPrimitive("n").getAsString();
         String tp = obj.getAsJsonPrimitive("tp").getAsString();
         Log.d(TAG, "handleAddNode: n=%s, tp=%s, p=%s", n, tp, p + "");
-        MessagingNamespace.MessagingNameType type = Enum.valueOf(MessagingNamespace.MessagingNameType.class, tp);
+        MessagingNameType type = Enum.valueOf(MessagingNameType.class, tp);
         if (p == null) {
             MessagingNamespace.getDefaultInstance().createName(n, type, DEFAULT_INITIATOR);
         } else {
