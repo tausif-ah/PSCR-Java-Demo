@@ -6,7 +6,6 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.logging.Level;
 import javax.websocket.CloseReason;
 import javax.websocket.EndpointConfig;
 import javax.websocket.OnClose;
@@ -21,6 +20,7 @@ import nist.p_70nanb17h188.demo.pscr19.imc.Intent;
 import nist.p_70nanb17h188.demo.pscr19.imc.IntentFilter;
 import nist.p_70nanb17h188.demo.pscr19.logic.Tuple2;
 import nist.p_70nanb17h188.demo.pscr19.logic.app.messaging.MessagingNamespace;
+import nist.p_70nanb17h188.demo.pscr19.logic.app.messaging.Template;
 import nist.p_70nanb17h188.demo.pscr19.logic.log.Log;
 import nist.p_70nanb17h188.demo.pscr19.logic.net.DataReceivedHandler;
 import nist.p_70nanb17h188.demo.pscr19.logic.net.Name;
@@ -226,7 +226,7 @@ public class DisasterManagement {
             session.getBasicRemote().sendText(GSON.toJson(createEvent(EVENT_TYPE_CONNECTION_ESTABLISH, establishString)));
             session.getBasicRemote().sendText(handleGetInit());
             session.getBasicRemote().sendText(handleGetGraph());
-//            session.getBasicRemote().sendText(handleGetTemplates());
+            session.getBasicRemote().sendText(handleGetTemplates());
         } catch (IOException ex) {
             Log.e(TAG, ex, "Failed in sending msg, subId=%d", subId);
             try {
@@ -268,12 +268,13 @@ public class DisasterManagement {
         }
         return GSON.toJson(createEvent(EVENT_TYPE_REQUEST_ILLEGAL, message));
     }
-    
+
     @OnClose
     public void onClose(Session session, CloseReason reason) {
         Log.d(TAG, "Close: %s", reason.getReasonPhrase());
         removeSession(session);
     }
+
     private String handleGetInit() {
         MessagingNamespace namespace = MessagingNamespace.getDefaultInstance();
         long incidentRoot = namespace.getIncidentRoot().getValue();
@@ -281,7 +282,9 @@ public class DisasterManagement {
         HashMap<String, Object> data = new HashMap<>();
         data.put(EVENT_TYPE_GRAPH_INCIDENT_ROOT, incidentRoot);
         data.put(EVENT_TYPE_GRAPH_DISPATCHER_ROOT, dispatcherRoot);
-        return GSON.toJson(createEvent(EVENT_TYPE_INIT, data));
+        String ret = GSON.toJson(createEvent(EVENT_TYPE_INIT, data));
+        Log.d(TAG, "handleGetInit, ret=%s", ret);
+        return ret;
     }
 
     private String handleGetGraph() {
@@ -292,7 +295,9 @@ public class DisasterManagement {
             namespace.forEachChild(na, c -> ras.add(new Tuple2<>(na.getName(), c.getName())));
         });
 
-        return createNamespaceChangeEvent(nas, new ArrayList<>(), ras, new ArrayList<>());
+        String ret = createNamespaceChangeEvent(nas, new ArrayList<>(), ras, new ArrayList<>());
+        Log.d(TAG, "handleGetGraph, ret=%s", ret);
+        return ret;
     }
 
     private String handleAddNode(JsonObject obj) {
@@ -318,12 +323,14 @@ public class DisasterManagement {
     private String handleAddNodeRelationship(JsonObject obj) {
         Name pName = new Name(obj.getAsJsonPrimitive("pid").getAsLong());
         Name cName = new Name(obj.getAsJsonPrimitive("cid").getAsLong());
+        Log.d(TAG, "handleAddNode: pName=%s, cName=%s", pName, cName);
         MessagingNamespace.getDefaultInstance().createRelationship(pName, cName, DEFAULT_INITIATOR);
         return null;
     }
 
     private String handleRemoveNode(JsonObject obj) {
         Name name = new Name(obj.getAsJsonPrimitive("id").getAsLong());
+        Log.d(TAG, "handleRemoveNode: name=%s", name);
         MessagingNamespace.getDefaultInstance().removeName(name, DEFAULT_INITIATOR);
         return null;
     }
@@ -331,6 +338,7 @@ public class DisasterManagement {
     private String handleRemoveNodeRelationship(JsonObject obj) {
         Name pName = new Name(obj.getAsJsonPrimitive("pid").getAsLong());
         Name cName = new Name(obj.getAsJsonPrimitive("cid").getAsLong());
+        Log.d(TAG, "handleRemoveNodeRelationship: pName=%s, cName=%s", pName, cName);
         MessagingNamespace.getDefaultInstance().removeRelationship(pName, cName, DEFAULT_INITIATOR);
         return null;
     }
@@ -338,23 +346,82 @@ public class DisasterManagement {
     private String handleNodeNameChange(JsonObject obj) {
         Name name = new Name(obj.getAsJsonPrimitive("id").getAsLong());
         String newAppName = obj.getAsJsonPrimitive("newName").getAsString();
+        Log.d(TAG, "handleRemoveNodeRelationship: name=%s, newAppName=%s", name, newAppName);
         MessagingNamespace.getDefaultInstance().updateAppName(name, newAppName, DEFAULT_INITIATOR);
         return null;
     }
 
     private String handleGetTemplates() {
-        return "[]";
+        ArrayList<HashMap<String, Object>> value = new ArrayList<>();
+        Template.forEachTemplate(t -> {
+            HashMap<String, Object> templateRepresentation = new HashMap<>();
+            templateRepresentation.put("id", t.getId());
+            templateRepresentation.put("name", t.getName());
+            value.add(templateRepresentation);
+        });
+        String ret = GSON.toJson(createEvent(EVENT_TYPE_TEMPLATES_GET_RESPONSE, value));
+        Log.d(TAG, "handleGetTemplates, ret=%s", ret);
+        return ret;
     }
 
     private String handleGetTemplate(JsonObject obj) {
-        return null;
+        int id = obj.getAsJsonPrimitive("id").getAsInt();
+        Template t = Template.getTemplate(id);
+        if (t == null) {
+            Log.e(TAG, "handleGetTemplate, cannot find template id: %d", id);
+            return null;
+        }
+        HashMap<String, Object> value = new HashMap<>();
+        value.put("id", t.getId());
+        value.put("rootNodeId", t.getRootNode().getValue());
+        value.put("commanderNodeId", t.getRootNode().getValue());
+        value.put("name", t.getName());
+        ArrayList<HashMap<String, Object>> nodes = new ArrayList<>();
+        value.put("n", nodes);
+        t.forEachName(mn -> {
+            HashMap<String, Object> node = new HashMap<>();
+            nodes.add(node);
+            node.put("i", mn.getName().getValue());
+            node.put("n", mn.getAppName());
+            node.put("tp", mn.getType());
+            ArrayList<Long> c = new ArrayList<>();
+            node.put("c", c);
+            t.forEachChild(mn, child -> c.add(child.getName().getValue()));
+        });
+        String ret = GSON.toJson(createEvent(EVENT_TYPE_TEMPLATE_GET_RESPONSE, value));
+        Log.d(TAG, "handleGetTemplate, id=%d ret=%s", id, ret);
+        return ret;
     }
 
     private String handleInstantiateTemplate(JsonObject obj, Session s) {
-        return null;
+        MessagingNamespace namespace = MessagingNamespace.getDefaultInstance();
+        int tid = obj.getAsJsonPrimitive("tid").getAsInt();
+        String name = obj.getAsJsonPrimitive("name").getAsString();
+        Template template = Template.getTemplate(tid);
+        if (template == null) {
+            Log.e(TAG, "handleGetTemplate: cannot find template id: %d", tid);
+            return null;
+        }
+        Tuple2<Name, Name> result = namespace.instantiateTemplate(template, name, DEFAULT_INITIATOR);
+
+        // add the commander to namespace by default
+        Name userName = ALL_SESSIONS.get(s);
+        assert userName != null;
+        namespace.createRelationship(result.getV2(), userName, DEFAULT_INITIATOR);
+
+        HashMap<String, Object> value = new HashMap<>();
+        value.put(EVENT_TYPE_TEMPLATE_GET_RESPONSE_ROOT, result.getV1().getValue());
+        value.put(EVENT_TYPE_TEMPLATE_GET_RESPONSE_COMMANDER, result.getV2().getValue());
+        String ret = GSON.toJson(createEvent(EVENT_TYPE_TEMPLATE_INSTANTIATE_RESPONSE, value));
+        Log.d(TAG, "handleInstantiateTemplate: tid=%d, name=%s, ret=%s", tid, name, ret);
+        return ret;
     }
 
     private String handleRemoveIncident(JsonObject obj) {
+        MessagingNamespace namespace = MessagingNamespace.getDefaultInstance();
+        Name incidentRootName = new Name(obj.getAsJsonPrimitive("id").getAsLong());
+        Log.d(TAG, "Remove incident, id=%s", incidentRootName);
+        namespace.removeIncidentTree(incidentRootName, DEFAULT_INITIATOR);
         return null;
     }
 

@@ -63,7 +63,7 @@ class MessagingNamespaceBuffer {
             nds.add(origName.getName());
         }
 
-
+        if (!nas.isEmpty() || !nds.isEmpty() || !ras.isEmpty() || !rds.isEmpty()) {
         Context.getContext(MessagingNamespace.CONTEXT_MESSAGINGNAMESPACE).sendBroadcast(
                 new Intent(MessagingNamespace.ACTION_NAMESPACE_CHANGED)
                         .putExtra(MessagingNamespace.EXTRA_NAMES_ADDED, nas)
@@ -71,6 +71,8 @@ class MessagingNamespaceBuffer {
                         .putExtra(MessagingNamespace.EXTRA_RELATIONSHIPS_ADDED, ras)
                         .putExtra(MessagingNamespace.EXTRA_RELATIONSHIPS_REMOVED, rds)
         );
+        }
+
         for (MessagingNamespace.MessagingName changedName : nameChanges) {
             Context.getContext(MessagingNamespace.CONTEXT_MESSAGINGNAMESPACE).sendBroadcast(
                     new Intent(MessagingNamespace.ACTION_APPNAME_CHANGED)
