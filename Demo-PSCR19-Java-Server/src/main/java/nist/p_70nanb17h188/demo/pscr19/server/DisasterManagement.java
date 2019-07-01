@@ -170,7 +170,7 @@ public class DisasterManagement {
         HashSet<Session> subscribers = SUBSCRIBERS.get(subscribe);
         if (subscribers == null) {
             SUBSCRIBERS.put(subscribe, subscribers = new HashSet<>());
-            NetLayer.subscribe(subscribe, onMessageReceived);
+            NetLayer.subscribe(subscribe, onMessageReceived, DEFAULT_INITIATOR);
         }
         subscribers.add(s);
     }
@@ -182,7 +182,7 @@ public class DisasterManagement {
             subscribers.remove(s);
             if (subscribers.isEmpty()) {
                 SUBSCRIBERS.remove(subscribe);
-                NetLayer.unSubscribe(subscribe, onMessageReceived);
+                NetLayer.unSubscribe(subscribe, onMessageReceived, DEFAULT_INITIATOR);
             }
         }
     }
