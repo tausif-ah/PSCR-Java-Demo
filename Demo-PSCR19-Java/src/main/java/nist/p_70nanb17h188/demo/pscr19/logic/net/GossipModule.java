@@ -91,9 +91,7 @@ public class GossipModule {
             if (!added) blacklist.add(k);
             Context.getContext(CONTEXT_GOSSIP_MODULE).sendBroadcast(new Intent(ACTION_BUFFER_CHANGED).putExtra(EXTRA_DIGEST, k).putExtra(EXTRA_MESSAGE, v).putExtra(EXTRA_ADDED, added));
         });
-        blacklist.addItemChangedEventHandler((k, added) -> {
-            Context.getContext(CONTEXT_GOSSIP_MODULE).sendBroadcast(new Intent(ACTION_BLACKLIST_CHANGED).putExtra(EXTRA_DIGEST, k).putExtra(EXTRA_ADDED, added));
-        });
+        blacklist.addItemChangedEventHandler((k, added) -> Context.getContext(CONTEXT_GOSSIP_MODULE).sendBroadcast(new Intent(ACTION_BLACKLIST_CHANGED).putExtra(EXTRA_DIGEST, k).putExtra(EXTRA_ADDED, added)));
 
         // listen to link layer events
         Context.getContext(LinkLayer.CONTEXT_LINK_LAYER).registerReceiver((context, intent) -> {
@@ -131,12 +129,10 @@ public class GossipModule {
         return messageBuffer.get(digest);
     }
 
-    @NonNull
     public void forEachDigestInBlacklist(Consumer<Digest> consumer) {
         blacklist.forEach(consumer);
     }
 
-    @NonNull
     public void forEachMessageInMessageBuffer(BiConsumer<Digest, Message> consumer) {
         messageBuffer.forEach(consumer);
     }

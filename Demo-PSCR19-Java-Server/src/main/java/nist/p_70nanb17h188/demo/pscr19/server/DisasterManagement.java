@@ -2,10 +2,15 @@ package nist.p_70nanb17h188.demo.pscr19.server;
 
 import com.google.gson.*;
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Stream;
 import javax.websocket.CloseReason;
 import javax.websocket.EndpointConfig;
 import javax.websocket.OnClose;
@@ -19,6 +24,7 @@ import nist.p_70nanb17h188.demo.pscr19.imc.Context;
 import nist.p_70nanb17h188.demo.pscr19.imc.Intent;
 import nist.p_70nanb17h188.demo.pscr19.imc.IntentFilter;
 import nist.p_70nanb17h188.demo.pscr19.logic.Tuple2;
+import nist.p_70nanb17h188.demo.pscr19.logic.app.messaging.Message;
 import nist.p_70nanb17h188.demo.pscr19.logic.app.messaging.MessagingName;
 import nist.p_70nanb17h188.demo.pscr19.logic.app.messaging.MessagingNameType;
 import nist.p_70nanb17h188.demo.pscr19.logic.app.messaging.MessagingNamespace;
@@ -63,9 +69,12 @@ public class DisasterManagement {
     private static final String DEFAULT_INITIATOR = "nist.p_70nanb17h188.demo.pscr19.server.DisasterManagement";
     private static final Gson GSON = new Gson();
     private static final JsonParser JSON_PARSER = new JsonParser();
+    private static final AtomicLong SESSION_SERIAL = new AtomicLong();
     private static final String TAG = "DisasterManagement";
-    private static final HashMap<Session, Name> ALL_SESSIONS = new HashMap<>();
+    // value: v1=subscribe, v2=unique name (DEFAULT_INITIATOR+"."+unique serial)
+    private static final HashMap<Session, Tuple2<Name, String>> ALL_SESSIONS = new HashMap<>();
     private static final HashMap<Name, HashSet<Session>> SUBSCRIBERS = new HashMap<>();
+    private static final int MAX_CONTENT_SHOW_LENGTH = 80;
 
     static {
         Context.getContext(MessagingNamespace.CONTEXT_MESSAGINGNAMESPACE).registerReceiver(DisasterManagement::onNamespaceChanged, new IntentFilter().addAction(MessagingNamespace.ACTION_NAMESPACE_CHANGED));
@@ -167,30 +176,36 @@ public class DisasterManagement {
         return GSON.toJson(createEvent(EVENT_TYPE_GRAPH_NODE_NAMECHANGE, value));
     }
 
+    private static final String getSessionUniqueID() {
+        return String.format("%s.%d", DEFAULT_INITIATOR, SESSION_SERIAL.incrementAndGet());
+    }
+
     private static void addSession(Session s, Name subscribe) {
-        ALL_SESSIONS.put(s, subscribe);
+        ALL_SESSIONS.put(s, new Tuple2<>(subscribe, getSessionUniqueID()));
         HashSet<Session> subscribers = SUBSCRIBERS.get(subscribe);
         if (subscribers == null) {
             SUBSCRIBERS.put(subscribe, subscribers = new HashSet<>());
-            NetLayer.subscribe(subscribe, onMessageReceived, DEFAULT_INITIATOR);
+            NetLayer.subscribe(subscribe, DEFAULT_MESSAGE_RECEIVE_HANDLER, DEFAULT_INITIATOR);
         }
         subscribers.add(s);
     }
 
     private static void removeSession(Session s) {
-        Name subscribe = ALL_SESSIONS.remove(s);
-        if (subscribe != null) {
-            HashSet<Session> subscribers = SUBSCRIBERS.get(subscribe);
-            subscribers.remove(s);
-            if (subscribers.isEmpty()) {
-                SUBSCRIBERS.remove(subscribe);
-                NetLayer.unSubscribe(subscribe, onMessageReceived, DEFAULT_INITIATOR);
-            }
+        Tuple2<Name, String> sessionInfo = ALL_SESSIONS.remove(s);
+        if (sessionInfo == null) {
+            return;
+        }
+        Name subscribe = sessionInfo.getV1();
+        if (subscribe == null) {
+            return;
+        }
+        HashSet<Session> subscribers = SUBSCRIBERS.get(subscribe);
+        subscribers.remove(s);
+        if (subscribers.isEmpty()) {
+            SUBSCRIBERS.remove(subscribe);
+            NetLayer.unSubscribe(subscribe, DEFAULT_MESSAGE_RECEIVE_HANDLER, DEFAULT_INITIATOR);
         }
     }
-
-    private static final DataReceivedHandler onMessageReceived = (src, dst, data, initiator) -> {
-    };
 
     @OnOpen
     public void onOpen(
@@ -404,12 +419,9 @@ public class DisasterManagement {
             Log.e(TAG, "handleGetTemplate: cannot find template id: %d", tid);
             return null;
         }
-        Tuple2<Name, Name> result = namespace.instantiateTemplate(template, name, DEFAULT_INITIATOR);
-
-        // add the commander to namespace by default
-        Name userName = ALL_SESSIONS.get(s);
+        Name userName = ALL_SESSIONS.get(s).getV1();
         assert userName != null;
-        namespace.createRelationship(result.getV2(), userName, DEFAULT_INITIATOR);
+        Tuple2<Name, Name> result = namespace.instantiateTemplate(template, name, userName, DEFAULT_INITIATOR);
 
         HashMap<String, Object> value = new HashMap<>();
         value.put(EVENT_TYPE_TEMPLATE_GET_RESPONSE_ROOT, result.getV1().getValue());
@@ -427,7 +439,140 @@ public class DisasterManagement {
         return null;
     }
 
+    private static final DataReceivedHandler DEFAULT_MESSAGE_RECEIVE_HANDLER = (src, dst, data, initiator) -> {
+        MessagingNamespace namespace = MessagingNamespace.getDefaultInstance();
+        ByteBuffer buffer = ByteBuffer.wrap(data);
+        Message msg = Message.read(buffer);
+        MessagingName msgSrc = namespace.getName(src);
+        MessagingName msgDst = namespace.getName(dst);
+        String strSrc = msgSrc == null ? src.toString() : msgSrc.toString();
+        String strDst = msgDst == null ? dst.toString() : msgDst.toString();
+
+        if (msg == null) {
+            Log.e(TAG, "received msg: src=%s, dst=%s, data.len=%d, initiator=%s, content not parsable", msgSrc, msgDst, data.length, initiator);
+            return;
+        }
+        MessagingName msgSg = namespace.getName(msg.getSenderGroup());
+        MessagingName msgRg = namespace.getName(msg.getReceiverGroup());
+        String strSg = msgSg == null ? msg.getSenderGroup().toString() : msgSg.toString();
+        String strRg = msgRg == null ? msg.getReceiverGroup().toString() : msgRg.toString();
+
+        Log.d(TAG, "received msg: src=%s, dst=%s, data.len=%d, initiator=%s MSG time=%s, sg=%s, rg=%s, sn=%s, ns=%s, tp=%s, mime=%s, content=%s",
+                msgSrc, msgDst, data.length, initiator,
+                new Date(msg.getSendTime()), strSg, strRg, msg.getSenderName(),
+                Arrays.toString(Stream.of(msg.getCarriedNames()).map(name -> {
+                    MessagingName mn = namespace.getName(name);
+                    return mn == null ? name.toString() : mn.toString();
+                }).toArray()),
+                msg.getType(),
+                msg.getMime(),
+                msg.getContent().length() > MAX_CONTENT_SHOW_LENGTH
+                ? String.format("[%d] %s...", msg.getContent().length(), msg.getContent().substring(0, MAX_CONTENT_SHOW_LENGTH))
+                : msg.getContent()
+        );
+        HashSet<Session> subscribers = SUBSCRIBERS.get(dst);
+        if (subscribers == null) {
+            Log.e(TAG, "subscribers of %s is null!", strDst);
+            return;
+        }
+
+        // generate string on demand
+        String toSend = null;
+
+        ArrayList<Session> toRemoves = new ArrayList<>();
+        for (Session subscriber : subscribers) {
+            Tuple2<Name, String> subInfo = ALL_SESSIONS.get(subscriber);
+            if (subInfo == null) {
+                Log.e(TAG, "Cannot find session ifno for %s", subscriber);
+                continue;
+            }
+            if (subInfo.getV2().equals(initiator)) {
+                continue;
+            }
+            if (toSend == null) {
+                // generate string on demand
+                HashMap<String, Object> value = new HashMap<>();
+                value.put("t", msg.getSendTime());
+                value.put("sn", msg.getSenderName());
+                value.put("sg", msg.getSenderGroup().getValue());
+                value.put("rg", msg.getReceiverGroup().getValue());
+                value.put("ns", Stream.of(msg.getCarriedNames()).map(n -> n.getValue()).toArray());
+                value.put("tp", msg.getType());
+                if (msg.getType() == Message.MessageType.MSG) {
+                    value.put("v", msg.getContent());
+                } else {
+                    value.put("v", msg.getMime() + msg.getContent());
+                }
+                toSend = GSON.toJson(createEvent(EVENT_TYPE_MESSAGE_DELIVER, value));
+                Log.d(TAG, "toSend: %s", toSend.length() > MAX_CONTENT_SHOW_LENGTH ? toSend.substring(0, MAX_CONTENT_SHOW_LENGTH) + "..." : toSend);
+            }
+
+            try {
+                subscriber.getBasicRemote().sendText(toSend);
+            } catch (IOException | RuntimeException ex) {
+                Log.e(TAG, ex, "Failed in sending msg");
+                try {
+                    subscriber.close();
+                } catch (IOException | RuntimeException ex2) {
+                    Log.e(TAG, ex2, "Failed in closing session");
+                }
+                toRemoves.add(subscriber);
+            }
+        }
+        toRemoves.forEach(DisasterManagement::removeSession);
+
+    };
+
     private String handleMessageDeliver(JsonObject obj, Session s) {
+        MessagingNamespace namespace = MessagingNamespace.getDefaultInstance();
+        JsonObject inner = obj.getAsJsonObject("v");
+        if (inner == null) {
+            return null;
+        }
+
+        long sendTime = inner.get("t").getAsLong();
+        String senderName = inner.get("sn").getAsString();
+        Name senderGroup = new Name(inner.get("sg").getAsLong());
+        Name receiverGroup = new Name(inner.get("rg").getAsLong());
+        JsonArray nameArray = inner.getAsJsonArray("ns");
+        Name[] carriedNames = new Name[nameArray.size()];
+        for (int i = 0; i < carriedNames.length; i++) {
+            carriedNames[i] = new Name(nameArray.get(i).getAsInt());
+        }
+        Message.MessageType type = Message.MessageType.valueOf(inner.get("tp").getAsString());
+        String content = inner.get("v").getAsString();
+
+        MessagingName msgSenderGroup = namespace.getName(senderGroup);
+        MessagingName msgReceiverGroup = namespace.getName(receiverGroup);
+        String mime;
+        if (type == Message.MessageType.PNT) {
+            int mimeEnd = content.indexOf("base64,") + 7;
+            mime = content.substring(0, mimeEnd);
+            content = content.substring(mimeEnd);
+        } else {
+            mime = "text/plain";
+        }
+
+        Log.d(TAG, "handleMessageDeliver time=%s, sg=%s, rg=%s, sn=%s, ns=%s, tp=%s, mime=%s, content=%s",
+                new Date(sendTime),
+                msgSenderGroup == null ? senderGroup.toString() : msgSenderGroup.toString(),
+                msgReceiverGroup == null ? receiverGroup.toString() : msgReceiverGroup.toString(),
+                senderName,
+                Arrays.toString(Stream.of(carriedNames).map(name -> {
+                    MessagingName mn = namespace.getName(name);
+                    return mn == null ? name.toString() : mn.toString();
+                }).toArray()),
+                type,
+                mime,
+                content.length() > MAX_CONTENT_SHOW_LENGTH
+                ? String.format("[%d] %s...", content.length(), content.substring(0, MAX_CONTENT_SHOW_LENGTH))
+                : content
+        );
+
+        Message msg = new Message(sendTime, senderGroup, receiverGroup, senderName, carriedNames, type, mime, content);
+        ByteBuffer buffer = ByteBuffer.allocate(msg.getWriteSize());
+        msg.write(buffer);
+        NetLayer.sendData(senderGroup, receiverGroup, buffer.array(), true, ALL_SESSIONS.get(s).getV2());
         return null;
     }
 }
