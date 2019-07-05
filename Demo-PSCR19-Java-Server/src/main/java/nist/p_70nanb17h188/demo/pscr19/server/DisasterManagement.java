@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.Collection;
 import java.util.Date;
 import java.util.HashMap;
@@ -20,6 +21,7 @@ import javax.websocket.Session;
 import javax.websocket.server.PathParam;
 import javax.websocket.server.ServerEndpoint;
 import nist.p_70nanb17h188.demo.pscr19.Device;
+import nist.p_70nanb17h188.demo.pscr19.Helper;
 import nist.p_70nanb17h188.demo.pscr19.imc.Context;
 import nist.p_70nanb17h188.demo.pscr19.imc.Intent;
 import nist.p_70nanb17h188.demo.pscr19.imc.IntentFilter;
@@ -75,6 +77,10 @@ public class DisasterManagement {
     private static final HashMap<Session, Tuple2<Name, String>> ALL_SESSIONS = new HashMap<>();
     private static final HashMap<Name, HashSet<Session>> SUBSCRIBERS = new HashMap<>();
     private static final int MAX_CONTENT_SHOW_LENGTH = 80;
+    private static final String MIME_SPLITTER = "base64,";
+    
+    private static final Base64.Decoder DEFAULT_DECODER = Base64.getDecoder();
+    private static final Base64.Encoder DEFAULT_ENCODER = Base64.getEncoder();
 
     static {
         Context.getContext(MessagingNamespace.CONTEXT_MESSAGINGNAMESPACE).registerReceiver(DisasterManagement::onNamespaceChanged, new IntentFilter().addAction(MessagingNamespace.ACTION_NAMESPACE_CHANGED));
@@ -139,6 +145,7 @@ public class DisasterManagement {
                     return naRepresentation;
                 }).toArray()
         );
+//        java.util.Base64.getMimeDecoder().d
 
         value.put("nd",
                 nds.stream().map(nd -> {
@@ -457,18 +464,18 @@ public class DisasterManagement {
         String strSg = msgSg == null ? msg.getSenderGroup().toString() : msgSg.toString();
         String strRg = msgRg == null ? msg.getReceiverGroup().toString() : msgRg.toString();
 
-        Log.d(TAG, "received msg: src=%s, dst=%s, data.len=%d, initiator=%s MSG time=%s, sg=%s, rg=%s, sn=%s, ns=%s, tp=%s, mime=%s, content=%s",
+        Log.d(TAG, "received msg: src=%s, dst=%s, data.len=%d, initiator=%s MSG time=%s, duration=%d, sg=%s, rg=%s, sn=%s, ns=%s, tp=%s, mime=%s, content=%s",
                 msgSrc, msgDst, data.length, initiator,
-                new Date(msg.getSendTime()), strSg, strRg, msg.getSenderName(),
+                new Date(msg.getSendTime()), msg.getDuration(), strSg, strRg, msg.getSenderName(),
                 Arrays.toString(Stream.of(msg.getCarriedNames()).map(name -> {
                     MessagingName mn = namespace.getName(name);
                     return mn == null ? name.toString() : mn.toString();
                 }).toArray()),
                 msg.getType(),
                 msg.getMime(),
-                msg.getContent().length() > MAX_CONTENT_SHOW_LENGTH
-                ? String.format("[%d] %s...", msg.getContent().length(), msg.getContent().substring(0, MAX_CONTENT_SHOW_LENGTH))
-                : msg.getContent()
+                msg.getContent().length > MAX_CONTENT_SHOW_LENGTH
+                ? String.format("[%d] %s...", msg.getContent().length, Helper.getHexString(msg.getContent(), 0, MAX_CONTENT_SHOW_LENGTH))
+                : Helper.getHexString(msg.getContent())
         );
         HashSet<Session> subscribers = SUBSCRIBERS.get(dst);
         if (subscribers == null) {
@@ -493,15 +500,16 @@ public class DisasterManagement {
                 // generate string on demand
                 HashMap<String, Object> value = new HashMap<>();
                 value.put("t", msg.getSendTime());
+                value.put("d", msg.getDuration());
                 value.put("sn", msg.getSenderName());
                 value.put("sg", msg.getSenderGroup().getValue());
                 value.put("rg", msg.getReceiverGroup().getValue());
                 value.put("ns", Stream.of(msg.getCarriedNames()).map(n -> n.getValue()).toArray());
                 value.put("tp", msg.getType());
                 if (msg.getType() == Message.MessageType.MSG) {
-                    value.put("v", msg.getContent());
+                    value.put("v", new String(msg.getContent(), Helper.DEFAULT_CHARSET));
                 } else {
-                    value.put("v", msg.getMime() + msg.getContent());
+                    value.put("v", msg.getMime() + DEFAULT_ENCODER.encodeToString(msg.getContent()));
                 }
                 toSend = GSON.toJson(createEvent(EVENT_TYPE_MESSAGE_DELIVER, value));
                 Log.d(TAG, "toSend: %s", toSend.length() > MAX_CONTENT_SHOW_LENGTH ? toSend.substring(0, MAX_CONTENT_SHOW_LENGTH) + "..." : toSend);
@@ -531,6 +539,7 @@ public class DisasterManagement {
         }
 
         long sendTime = inner.get("t").getAsLong();
+        long duration = inner.get("d").getAsLong();
         String senderName = inner.get("sn").getAsString();
         Name senderGroup = new Name(inner.get("sg").getAsLong());
         Name receiverGroup = new Name(inner.get("rg").getAsLong());
@@ -540,21 +549,29 @@ public class DisasterManagement {
             carriedNames[i] = new Name(nameArray.get(i).getAsInt());
         }
         Message.MessageType type = Message.MessageType.valueOf(inner.get("tp").getAsString());
-        String content = inner.get("v").getAsString();
+        String sContent = inner.get("v").getAsString();
+        byte[] content;
 
         MessagingName msgSenderGroup = namespace.getName(senderGroup);
         MessagingName msgReceiverGroup = namespace.getName(receiverGroup);
         String mime;
         if (type == Message.MessageType.PNT) {
-            int mimeEnd = content.indexOf("base64,") + 7;
-            mime = content.substring(0, mimeEnd);
-            content = content.substring(mimeEnd);
+            int mimeEnd = sContent.indexOf(MIME_SPLITTER);
+            if (mimeEnd < 0) {
+                Log.e(TAG, "handleMessageDeliver: Cannot find base64, sContent=[%d]%s", sContent.length(), sContent);
+                return null;
+            }
+            mimeEnd += MIME_SPLITTER.length();
+            mime = sContent.substring(0, mimeEnd);
+            content = DEFAULT_DECODER.decode(sContent.substring(mimeEnd));
         } else {
             mime = "text/plain";
+            content = sContent.getBytes(Helper.DEFAULT_CHARSET);
         }
 
-        Log.d(TAG, "handleMessageDeliver time=%s, sg=%s, rg=%s, sn=%s, ns=%s, tp=%s, mime=%s, content=%s",
+        Log.d(TAG, "handleMessageDeliver time=%s, duration=%d, sg=%s, rg=%s, sn=%s, ns=%s, tp=%s, mime=%s, content=%s",
                 new Date(sendTime),
+                duration,
                 msgSenderGroup == null ? senderGroup.toString() : msgSenderGroup.toString(),
                 msgReceiverGroup == null ? receiverGroup.toString() : msgReceiverGroup.toString(),
                 senderName,
@@ -564,12 +581,12 @@ public class DisasterManagement {
                 }).toArray()),
                 type,
                 mime,
-                content.length() > MAX_CONTENT_SHOW_LENGTH
-                ? String.format("[%d] %s...", content.length(), content.substring(0, MAX_CONTENT_SHOW_LENGTH))
-                : content
+                content.length > MAX_CONTENT_SHOW_LENGTH
+                ? String.format("[%d] %s...", content.length, Helper.getHexString(content, 0, MAX_CONTENT_SHOW_LENGTH))
+                : Helper.getHexString(content)
         );
 
-        Message msg = new Message(sendTime, senderGroup, receiverGroup, senderName, carriedNames, type, mime, content);
+        Message msg = new Message(sendTime, duration, senderGroup, receiverGroup, senderName, carriedNames, type, mime, content);
         ByteBuffer buffer = ByteBuffer.allocate(msg.getWriteSize());
         msg.write(buffer);
         NetLayer.sendData(senderGroup, receiverGroup, buffer.array(), true, ALL_SESSIONS.get(s).getV2());
