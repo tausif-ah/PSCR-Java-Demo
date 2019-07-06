@@ -539,7 +539,8 @@ public class DisasterManagement {
         }
 
         long sendTime = inner.get("t").getAsLong();
-        long duration = inner.get("d").getAsLong();
+        JsonElement d = inner.get("d");
+        long duration = d == null ? 0 : d.getAsLong();
         String senderName = inner.get("sn").getAsString();
         Name senderGroup = new Name(inner.get("sg").getAsLong());
         Name receiverGroup = new Name(inner.get("rg").getAsLong());
