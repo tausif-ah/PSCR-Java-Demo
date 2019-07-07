@@ -33,7 +33,7 @@ final class LinkLayer_Impl_PC {
     /**
      * Singleton pattern, prevent the class to be instantiated by the others.
      */
-    LinkLayer_Impl_PC() throws IOException {
+    LinkLayer_Impl_PC() {
         //tcpConnectionManager = new TCPConnectionManager();
         threadTCPConnectionManager = new ThreadTCPConnectionManager();
         //tcpConnectionManager.start();
