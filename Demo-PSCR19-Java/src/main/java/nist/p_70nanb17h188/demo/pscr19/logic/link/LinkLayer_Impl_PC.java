@@ -21,18 +21,25 @@ final class LinkLayer_Impl_PC {
 
     private static final String TAG = "LinkLayer_Impl_PC";
 
+    //@NonNull
+    //private final TCPConnectionManager tcpConnectionManager;
     @NonNull
-    private final TCPConnectionManager tcpConnectionManager;
+    private final ThreadTCPConnectionManager threadTCPConnectionManager;
+    //@NonNull
+    //private final WifiTCPConnectionManager wifiTCPConnectionManager;
     @NonNull
-    private final WifiTCPConnectionManager wifiTCPConnectionManager;
+    private final WifiThreadTCPConnectionManager wifiThreadTCPConnectionManager;
 
     /**
      * Singleton pattern, prevent the class to be instantiated by the others.
      */
     LinkLayer_Impl_PC() throws IOException {
-        tcpConnectionManager = new TCPConnectionManager();
-        tcpConnectionManager.start();
-        wifiTCPConnectionManager = WifiTCPConnectionManager.createWifiTCPConnectionManager(tcpConnectionManager);
+        //tcpConnectionManager = new TCPConnectionManager();
+        threadTCPConnectionManager = new ThreadTCPConnectionManager();
+        //tcpConnectionManager.start();
+        threadTCPConnectionManager.start();
+        //wifiTCPConnectionManager = WifiTCPConnectionManager.createWifiTCPConnectionManager(tcpConnectionManager);
+        wifiThreadTCPConnectionManager = WifiThreadTCPConnectionManager.createWifiTCPConnectionManager(threadTCPConnectionManager);
 
         DelayRunner.getDefaultInstance().postDelayed(1000, () -> {
             WifiP2pInfo groupInfo = new WifiP2pInfo(true, false, Constants.WIFI_DIRECT_SERVER_ADDRESS);
@@ -47,7 +54,8 @@ final class LinkLayer_Impl_PC {
 
     boolean sendData(@NonNull NeighborID id, @NonNull byte[] data, int start, int len) {
         // prefer Wifi over Bluetooth
-        return wifiTCPConnectionManager.sendData(id, data, start, len);
+        //return wifiTCPConnectionManager.sendData(id, data, start, len);
+        return wifiThreadTCPConnectionManager.sendData(id, data, start, len);
     }
 
 }
